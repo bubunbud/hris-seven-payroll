@@ -1,0 +1,548 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Absen;
+use App\Models\Izin;
+use App\Models\TidakMasuk;
+use App\Models\Karyawan;
+use App\Models\JenisIzin;
+use Illuminate\Http\Request;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
+class StatistikAbsensiController extends Controller
+{
+    public function index(Request $request)
+    {
+        $startDate = $request->get('dari_tanggal', Carbon::now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->get('sampai_tanggal', Carbon::now()->endOfMonth()->format('Y-m-d'));
+        $nik = $request->get('nik');
+        $group = $request->get('group');
+
+        // Filter karyawan scope
+        $karyawanQuery = Karyawan::query()->where('vcAktif', '1');
+        if ($nik) {
+            $karyawanQuery->where('Nik', 'like', "%$nik%");
+        }
+        if ($group) {
+            $karyawanQuery->where('Group_pegawai', $group);
+        }
+        $nikList = $karyawanQuery->pluck('Nik');
+        // Jika filter NIK diisi, pakai pencocokan eksak agar agregasi hanya untuk NIK tsb.
+        if ($nik) {
+            $nikList = collect([$nik]);
+        }
+        $selectedNama = null;
+        if ($nik) {
+            $selectedNama = Karyawan::where('Nik', $nik)->value('Nama');
+        }
+
+        // Kehadiran aktual: jumlah baris t_absen yang memiliki jam masuk atau jam keluar
+        $hadir = Absen::whereBetween('dtTanggal', [$startDate, $endDate])
+            ->when($nikList->isNotEmpty(), fn($q) => $q->whereIn('vcNik', $nikList))
+            ->where(function ($q) {
+                $q->whereNotNull('dtJamMasuk')->orWhereNotNull('dtJamKeluar');
+            })
+            ->count();
+
+        // Total hari kerja (exclude Sabtu/Minggu & hari libur nasional)
+        $holidayDates = \App\Models\HariLibur::whereBetween('dtTanggal', [$startDate, $endDate])
+            ->pluck('dtTanggal')->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+            ->toArray();
+        $totalHariKerja = 0;
+        $cursor = Carbon::parse($startDate);
+        $end = Carbon::parse($endDate);
+        while ($cursor->lte($end)) {
+            $dow = (int) $cursor->format('w'); // 0=Min,6=Sabtu
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($cursor->format('Y-m-d'), $holidayDates, true);
+            if (!$isWeekend && !$isHoliday) { $totalHariKerja++; }
+            $cursor->addDay();
+        }
+
+        // Tidak masuk: agregasi berdasarkan jenis absen (m_jenis_absen)
+        $tidakMasuk = TidakMasuk::with('jenisAbsen')
+            ->when($nikList->isNotEmpty(), fn($q) => $q->whereIn('vcNik', $nikList))
+            ->where(function ($q) use ($startDate, $endDate) {
+                $q->whereBetween('dtTanggalMulai', [$startDate, $endDate])
+                  ->orWhereBetween('dtTanggalSelesai', [$startDate, $endDate])
+                  ->orWhere(function ($qq) use ($startDate, $endDate) {
+                      $qq->where('dtTanggalMulai', '<=', $startDate)
+                         ->where('dtTanggalSelesai', '>=', $endDate);
+                  });
+            })
+            ->get();
+
+        $ringkasanTidakMasuk = [];
+        $totalTidakMasukHari = 0;
+        $totalResmiHari = 0; // I001, C010, C011, S010 dihitung sebagai hadir kebijakan
+        foreach ($tidakMasuk as $tm) {
+            $jenis = $tm->jenisAbsen->vcKeterangan ?? $tm->vcKodeAbsen;
+            $hari = $tm->jumlah_hari ?? 0; // accessor dari model
+            $ringkasanTidakMasuk[$jenis] = ($ringkasanTidakMasuk[$jenis] ?? 0) + $hari;
+            $totalTidakMasukHari += $hari;
+            if (in_array(($tm->vcKodeAbsen ?? ''), ['I001','C010','C011','S010'], true)) {
+                $totalResmiHari += $hari;
+            }
+        }
+
+        // Izin keluar komplek: total jam izin (untuk jenis izin pribadi Z003 + Z004)
+        $izinKeluar = Izin::with(['karyawan.shift', 'jenisIzin'])
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->when($nikList->isNotEmpty(), fn($q) => $q->whereIn('vcNik', $nikList))
+            ->get();
+        
+        // Hitung total jam izin keluar untuk izin pribadi (Z003 + Z004)
+        $totalJamIzinKeluar = 0.0;
+        foreach ($izinKeluar as $iz) {
+            // Hitung jika vcKodeIzin = 'Z003' (izin keluar pribadi) atau 'Z004' (izin masuk siang pribadi)
+            if (!in_array($iz->vcKodeIzin, ['Z003', 'Z004'], true)) {
+                continue;
+            }
+
+            if (!$iz->dtDari) continue;
+            $tanggal = $iz->dtTanggal instanceof Carbon ? $iz->dtTanggal->copy() : Carbon::parse($iz->dtTanggal);
+            $dari = $tanggal->copy()->setTimeFromTimeString((string) $iz->dtDari);
+
+            // Tentukan waktu sampai: jika kosong atau 00:00 gunakan jam pulang shift
+            $rawSampai = $iz->dtSampai ? (string) $iz->dtSampai : null;
+            $isZero = $rawSampai && (substr($rawSampai, 0, 5) === '00:00');
+            $shiftPulang = null;
+            if ($iz->karyawan && $iz->karyawan->shift && $iz->karyawan->shift->vcPulang) {
+                $shiftPulang = $iz->karyawan->shift->vcPulang instanceof Carbon
+                    ? $iz->karyawan->shift->vcPulang->format('H:i')
+                    : substr((string) $iz->karyawan->shift->vcPulang, 0, 5);
+            }
+            $sampaiClock = (!$rawSampai || $isZero) ? $shiftPulang : substr($rawSampai, 0, 5);
+            if (!$sampaiClock) continue; // tidak bisa tentukan akhir
+
+            $sampai = $tanggal->copy()->setTimeFromTimeString($sampaiClock);
+            if ($sampai->lessThan($dari)) { $sampai->addDay(); }
+            $menit = $dari->diffInMinutes($sampai, true);
+            // Kurangi 1 jam jika interval melewati jam istirahat 12:00-13:00
+            $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
+            $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
+            if ($dari->lt($lunchEnd) && $sampai->gt($lunchStart)) {
+                $menit = max(0, $menit - 60);
+            }
+            $totalJamIzinKeluar += round($menit / 60, 2);
+        }
+
+        // Telat & Pulang Cepat (aturan dasar): bandingkan dengan jam shift karyawan jika ada
+        $telat = 0; $pulangCepat = 0;
+        $debugTelat = [];
+        $debugPulangCepat = [];
+        $absenList = Absen::with(['karyawan.shift'])
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->when($nikList->isNotEmpty(), fn($q) => $q->whereIn('vcNik', $nikList))
+            ->get();
+        foreach ($absenList as $ab) {
+            $jamMasuk = $ab->dtJamMasuk ? substr((string) $ab->dtJamMasuk, 0, 5) : null;
+            $jamKeluar = $ab->dtJamKeluar ? substr((string) $ab->dtJamKeluar, 0, 5) : null;
+            $shiftMasuk = null; $shiftPulang = null;
+            if ($ab->karyawan && $ab->karyawan->shift) {
+                $shiftMasuk = $ab->karyawan->shift->vcMasuk instanceof Carbon
+                    ? $ab->karyawan->shift->vcMasuk->format('H:i')
+                    : ($ab->karyawan->shift->vcMasuk ? substr((string) $ab->karyawan->shift->vcMasuk, 0, 5) : null);
+                $shiftPulang = $ab->karyawan->shift->vcPulang instanceof Carbon
+                    ? $ab->karyawan->shift->vcPulang->format('H:i')
+                    : ($ab->karyawan->shift->vcPulang ? substr((string) $ab->karyawan->shift->vcPulang, 0, 5) : null);
+            }
+
+            if ($jamMasuk && $shiftMasuk) {
+                $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+                $tShiftMasuk = $tanggal->copy()->setTimeFromTimeString($shiftMasuk);
+                if ($tMasuk->greaterThan($tShiftMasuk)) {
+                    $selisih = $tShiftMasuk->diffInMinutes($tMasuk);
+                    if ($selisih > 1) { $telat++; }
+                    // Simpan debug telat
+                    $debugTelat[] = [
+                        'tanggal' => ($ab->dtTanggal instanceof Carbon) ? $ab->dtTanggal->format('Y-m-d') : Carbon::parse($ab->dtTanggal)->format('Y-m-d'),
+                        'nik' => $ab->vcNik,
+                        'nama' => $ab->karyawan->Nama ?? '-',
+                        'jamMasuk' => $jamMasuk,
+                        'jamKeluar' => $jamKeluar,
+                        'shiftMasuk' => $shiftMasuk,
+                        'shiftPulang' => $shiftPulang,
+                        'menitTelat' => $selisih,
+                    ];
+                }
+            }
+            if ($jamKeluar && $shiftPulang) {
+                $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                $tKeluar = $tanggal->copy()->setTimeFromTimeString($jamKeluar);
+                $tShiftPulang = $tanggal->copy()->setTimeFromTimeString($shiftPulang);
+                if ($tKeluar->lessThan($tShiftPulang)) { 
+                    $pulangCepat++; 
+                    // Simpan debug pulang cepat
+                    $debugPulangCepat[] = [
+                        'tanggal' => ($ab->dtTanggal instanceof Carbon) ? $ab->dtTanggal->format('Y-m-d') : Carbon::parse($ab->dtTanggal)->format('Y-m-d'),
+                        'nik' => $ab->vcNik,
+                        'nama' => $ab->karyawan->Nama ?? '-',
+                        'jamMasuk' => $jamMasuk,
+                        'jamKeluar' => $jamKeluar,
+                        'shiftMasuk' => $shiftMasuk,
+                        'shiftPulang' => $shiftPulang,
+                        'menitLebihAwal' => $tKeluar->diffInMinutes($tShiftPulang),
+                    ];
+                }
+            }
+        }
+
+        // Masuk Siang: dari Izin Keluar Komplek dengan jenis izin pribadi Z004 (masuk siang pribadi)
+        // Z004 = Izin masuk siang pribadi (sudah teridentifikasi sebagai masuk siang)
+        $masukSiang = 0;
+        $masukSiangPerNik = [];
+        $totalJamMasukSiang = 0.0; // Total jam izin masuk siang
+        $debugMasukSiang = []; // Untuk debug
+        $debugAllIzinZ003Z004 = []; // Debug semua izin Z003 dan Z004
+        foreach ($izinKeluar as $iz) {
+            // Debug info untuk semua izin Z003 dan Z004
+            if (in_array($iz->vcKodeIzin, ['Z003', 'Z004'], true)) {
+                // Hitung durasi izin (dikurangi jam istirahat jika melewati 12:00-13:00)
+                $durasiJam = 0;
+                $durasiMenit = 0;
+                $durasiText = '-';
+                $dtSampaiDisplay = '-';
+                
+                if ($iz->dtDari) {
+                    $tanggalIzin = $iz->dtTanggal instanceof Carbon ? $iz->dtTanggal->copy() : Carbon::parse($iz->dtTanggal);
+                    $dariIzin = $tanggalIzin->copy()->setTimeFromTimeString((string) $iz->dtDari);
+                    
+                    // Tentukan sampai: jika kosong atau 00:00 gunakan jam pulang shift
+                    $rawSampaiIzin = $iz->dtSampai ? (string) $iz->dtSampai : null;
+                    $isZeroIzin = $rawSampaiIzin && (substr($rawSampaiIzin, 0, 5) === '00:00');
+                    $shiftPulangIzin = null;
+                    if ($iz->karyawan && $iz->karyawan->shift && $iz->karyawan->shift->vcPulang) {
+                        $shiftPulangIzin = $iz->karyawan->shift->vcPulang instanceof Carbon
+                            ? $iz->karyawan->shift->vcPulang->format('H:i')
+                            : substr((string) $iz->karyawan->shift->vcPulang, 0, 5);
+                    }
+                    $sampaiClockIzin = (!$rawSampaiIzin || $isZeroIzin) ? $shiftPulangIzin : substr($rawSampaiIzin, 0, 5);
+                    
+                    // Untuk display, jika menggunakan shift pulang, tampilkan dengan catatan
+                    if (!$rawSampaiIzin || $isZeroIzin) {
+                        $dtSampaiDisplay = $shiftPulangIzin ? $shiftPulangIzin . ' (shift)' : '-';
+                    } else {
+                        $dtSampaiDisplay = substr($rawSampaiIzin, 0, 5);
+                    }
+                    
+                    if ($sampaiClockIzin) {
+                        $sampaiIzin = $tanggalIzin->copy()->setTimeFromTimeString($sampaiClockIzin);
+                        if ($sampaiIzin->lessThan($dariIzin)) { $sampaiIzin->addDay(); }
+                        $menitIzin = $dariIzin->diffInMinutes($sampaiIzin, true);
+                        $lunchStart = $tanggalIzin->copy()->setTimeFromTimeString('12:00');
+                        $lunchEnd = $tanggalIzin->copy()->setTimeFromTimeString('13:00');
+                        if ($dariIzin->lt($lunchEnd) && $sampaiIzin->gt($lunchStart)) {
+                            $menitIzin = max(0, $menitIzin - 60);
+                        }
+                        $durasiJam = floor($menitIzin / 60);
+                        $durasiMenit = $menitIzin % 60;
+                        $durasiText = $durasiJam . ' jam ' . $durasiMenit . ' menit';
+                    }
+                }
+                
+                $debugAllIzinZ003Z004[] = [
+                    'tanggal' => $iz->dtTanggal ? $iz->dtTanggal->format('Y-m-d') : '-',
+                    'nik' => $iz->vcNik,
+                    'nama' => $iz->karyawan->Nama ?? '-',
+                    'vcKodeIzin' => $iz->vcKodeIzin,
+                    'dtDari' => $iz->dtDari ? substr((string) $iz->dtDari, 0, 5) : '-',
+                    'dtSampai' => $dtSampaiDisplay,
+                    'durasi' => ($iz->dtDari) ? 'Dihitung' : 'Tidak lengkap',
+                    'durasiText' => $durasiText,
+                    'durasiJam' => $durasiJam,
+                    'durasiMenit' => $durasiMenit,
+                ];
+            }
+            
+            // Masuk Siang hanya untuk Z004 (izin masuk siang pribadi)
+            if ($iz->vcKodeIzin !== 'Z004') {
+                continue;
+            }
+            
+            if (!$iz->dtDari) continue;
+            
+            // Hitung durasi izin masuk siang (dtDari sampai dtSampai/shift pulang jika kosong)
+            $tanggal = $iz->dtTanggal instanceof Carbon ? $iz->dtTanggal->copy() : Carbon::parse($iz->dtTanggal);
+            $dari = $tanggal->copy()->setTimeFromTimeString((string) $iz->dtDari);
+            $rawSampai = $iz->dtSampai ? (string) $iz->dtSampai : null;
+            $isZero = $rawSampai && (substr($rawSampai, 0, 5) === '00:00');
+            $shiftPulang = null;
+            if ($iz->karyawan && $iz->karyawan->shift && $iz->karyawan->shift->vcPulang) {
+                $shiftPulang = $iz->karyawan->shift->vcPulang instanceof Carbon
+                    ? $iz->karyawan->shift->vcPulang->format('H:i')
+                    : substr((string) $iz->karyawan->shift->vcPulang, 0, 5);
+            }
+            $sampaiClock = (!$rawSampai || $isZero) ? $shiftPulang : substr($rawSampai, 0, 5);
+            if (!$sampaiClock) continue;
+            $sampai = $tanggal->copy()->setTimeFromTimeString($sampaiClock);
+            if ($sampai->lessThan($dari)) { $sampai->addDay(); }
+
+            $masukSiang++;
+            $masukSiangPerNik[$iz->vcNik] = ($masukSiangPerNik[$iz->vcNik] ?? 0) + 1;
+
+            // Hitung total jam masuk siang (durasi dari dtDari sampai dtSampai) dikurangi jam istirahat jika overlap
+            $menit = $dari->diffInMinutes($sampai, true);
+            $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
+            $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
+            if ($dari->lt($lunchEnd) && $sampai->gt($lunchStart)) {
+                $menit = max(0, $menit - 60);
+            }
+            $jamMasukSiang = round($menit / 60, 2);
+            $totalJamMasukSiang += $jamMasukSiang;
+            
+            // Debug info untuk yang masuk siang
+            $debugMasukSiang[] = [
+                'tanggal' => $iz->dtTanggal->format('Y-m-d'),
+                'nik' => $iz->vcNik,
+                'nama' => $iz->karyawan->Nama ?? '-',
+                'vcKodeIzin' => $iz->vcKodeIzin,
+                'dtDari' => $iz->dtDari,
+                'dtSampai' => $sampaiClock,
+                'jamMasukSiang' => $jamMasukSiang,
+            ];
+        }
+
+        // Kehadiran Kebijakan: hadir + hari resmi (I001, C010, C011, S010). Parameter dibayar diabaikan.
+        $hadirKebijakan = $hadir + $totalResmiHari;
+
+        // Build ringkasan per karyawan
+        $perKaryawan = [];
+        $nikToNama = Karyawan::whereIn('Nik', $nikList)->where('vcAktif', '1')->pluck('Nama', 'Nik');
+
+        $hadirPerNik = Absen::select('vcNik', DB::raw('COUNT(*) as jml'))
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->when($nikList->isNotEmpty(), fn($q) => $q->whereIn('vcNik', $nikList))
+            ->where(function ($q) { $q->whereNotNull('dtJamMasuk')->orWhereNotNull('dtJamKeluar'); })
+            ->groupBy('vcNik')->pluck('jml', 'vcNik');
+
+        $sakitSuratPerNik = [];
+        $cutiTahunanPerNik = [];
+        $izinResmiPerNik = [];   // I001
+        $izinPribadiPerNik = []; // I002
+        foreach ($tidakMasuk as $tm) {
+            $hari = $tm->jumlah_hari ?? 0;
+            $nikKey = $tm->vcNik;
+            if ($tm->vcKodeAbsen === 'S010') {
+                $sakitSuratPerNik[$nikKey] = ($sakitSuratPerNik[$nikKey] ?? 0) + $hari;
+            } elseif ($tm->vcKodeAbsen === 'C010') {
+                $cutiTahunanPerNik[$nikKey] = ($cutiTahunanPerNik[$nikKey] ?? 0) + $hari;
+            } elseif ($tm->vcKodeAbsen === 'I001') {
+                $izinResmiPerNik[$nikKey] = ($izinResmiPerNik[$nikKey] ?? 0) + $hari;
+            } elseif ($tm->vcKodeAbsen === 'I002') {
+                $izinPribadiPerNik[$nikKey] = ($izinPribadiPerNik[$nikKey] ?? 0) + $hari;
+            }
+        }
+
+        $izinKeluarJamPerNik = [];
+        foreach ($izinKeluar as $iz) {
+            // Hitung jika vcKodeIzin = 'Z003' (izin keluar pribadi) atau 'Z004' (izin masuk siang pribadi)
+            if (!in_array($iz->vcKodeIzin, ['Z003', 'Z004'], true)) {
+                continue;
+            }
+            
+            if (!$iz->dtDari) continue;
+            $tanggal = $iz->dtTanggal instanceof Carbon ? $iz->dtTanggal->copy() : Carbon::parse($iz->dtTanggal);
+            $dari = $tanggal->copy()->setTimeFromTimeString((string) $iz->dtDari);
+            $rawSampai = $iz->dtSampai ? (string) $iz->dtSampai : null;
+            $isZero = $rawSampai && (substr($rawSampai, 0, 5) === '00:00');
+            $shiftPulang = null;
+            if ($iz->karyawan && $iz->karyawan->shift && $iz->karyawan->shift->vcPulang) {
+                $shiftPulang = $iz->karyawan->shift->vcPulang instanceof Carbon
+                    ? $iz->karyawan->shift->vcPulang->format('H:i')
+                    : substr((string) $iz->karyawan->shift->vcPulang, 0, 5);
+            }
+            $sampaiClock = (!$rawSampai || $isZero) ? $shiftPulang : substr($rawSampai, 0, 5);
+            if (!$sampaiClock) continue;
+            $sampai = $tanggal->copy()->setTimeFromTimeString($sampaiClock);
+            if ($sampai->lessThan($dari)) { $sampai->addDay(); }
+            $menit = $dari->diffInMinutes($sampai, true);
+            $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
+            $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
+            if ($dari->lt($lunchEnd) && $sampai->gt($lunchStart)) {
+                $menit = max(0, $menit - 60);
+            }
+            $izinKeluarJamPerNik[$iz->vcNik] = ($izinKeluarJamPerNik[$iz->vcNik] ?? 0) + round($menit / 60, 2);
+        }
+
+        $telatPerNik = [];
+        foreach ($absenList as $ab) {
+            $jamMasuk = $ab->dtJamMasuk ? substr((string) $ab->dtJamMasuk, 0, 5) : null;
+            $shiftMasuk = null;
+            if ($ab->karyawan && $ab->karyawan->shift) {
+                $shiftMasuk = $ab->karyawan->shift->vcMasuk instanceof Carbon
+                    ? $ab->karyawan->shift->vcMasuk->format('H:i')
+                    : ($ab->karyawan->shift->vcMasuk ? substr((string) $ab->karyawan->shift->vcMasuk, 0, 5) : null);
+            }
+            if ($jamMasuk && $shiftMasuk) {
+                $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+                $tShiftMasuk = $tanggal->copy()->setTimeFromTimeString($shiftMasuk);
+                if ($tMasuk->greaterThan($tShiftMasuk)) {
+                    $selisih = $tShiftMasuk->diffInMinutes($tMasuk);
+                    if ($selisih > 1) {
+                        $telatPerNik[$ab->vcNik] = ($telatPerNik[$ab->vcNik] ?? 0) + 1;
+                    }
+                }
+            }
+        }
+
+        // Hitung pulang cepat per karyawan dari data absen
+        $pulangCepatPerNik = [];
+        foreach ($absenList as $ab) {
+            $jamKeluar = $ab->dtJamKeluar ? substr((string) $ab->dtJamKeluar, 0, 5) : null;
+            $shiftPulang = null;
+            if ($ab->karyawan && $ab->karyawan->shift) {
+                $shiftPulang = $ab->karyawan->shift->vcPulang instanceof Carbon
+                    ? $ab->karyawan->shift->vcPulang->format('H:i')
+                    : ($ab->karyawan->shift->vcPulang ? substr((string) $ab->karyawan->shift->vcPulang, 0, 5) : null);
+            }
+            if ($jamKeluar && $shiftPulang) {
+                $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                $tKeluar = $tanggal->copy()->setTimeFromTimeString($jamKeluar);
+                $tShiftPulang = $tanggal->copy()->setTimeFromTimeString($shiftPulang);
+                if ($tKeluar->lessThan($tShiftPulang)) {
+                    $pulangCepatPerNik[$ab->vcNik] = ($pulangCepatPerNik[$ab->vcNik] ?? 0) + 1;
+                }
+            }
+        }
+
+        // Hitung Surplus dan Defisit Absensi
+        // Surplus = jam kerja aktual > jam shift standar
+        // Defisit = jam kerja aktual < jam shift standar
+        $totalSurplusJam = 0.0;
+        $totalDefisitJam = 0.0;
+        $totalJamStandarKerja = 0.0; // Total akumulasi jam standar kerja
+        $totalJamKerjaAktual = 0.0;  // Total akumulasi jam kerja aktual
+        foreach ($absenList as $ab) {
+            if (!$ab->dtJamMasuk || !$ab->dtJamKeluar || !$ab->karyawan || !$ab->karyawan->shift) {
+                continue;
+            }
+
+            $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+            $jamMasuk = substr((string) $ab->dtJamMasuk, 0, 5);
+            $jamKeluar = substr((string) $ab->dtJamKeluar, 0, 5);
+            
+            $shiftMasuk = $ab->karyawan->shift->vcMasuk instanceof Carbon
+                ? $ab->karyawan->shift->vcMasuk->format('H:i')
+                : substr((string) $ab->karyawan->shift->vcMasuk, 0, 5);
+            $shiftPulang = $ab->karyawan->shift->vcPulang instanceof Carbon
+                ? $ab->karyawan->shift->vcPulang->format('H:i')
+                : substr((string) $ab->karyawan->shift->vcPulang, 0, 5);
+
+            if (!$shiftMasuk || !$shiftPulang) continue;
+
+            // Hitung jam kerja aktual (dikurangi 1 jam istirahat jika melewati 12:00-13:00)
+            $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+            $tKeluar = $tanggal->copy()->setTimeFromTimeString($jamKeluar);
+            if ($tKeluar->lessThan($tMasuk)) { $tKeluar->addDay(); }
+            $menitAktual = $tMasuk->diffInMinutes($tKeluar, true);
+            $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
+            $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
+            if ($tMasuk->lt($lunchEnd) && $tKeluar->gt($lunchStart)) {
+                $menitAktual = max(0, $menitAktual - 60);
+            }
+
+            // Hitung jam shift standar (dikurangi 1 jam istirahat)
+            $tShiftMasuk = $tanggal->copy()->setTimeFromTimeString($shiftMasuk);
+            $tShiftPulang = $tanggal->copy()->setTimeFromTimeString($shiftPulang);
+            if ($tShiftPulang->lessThan($tShiftMasuk)) { $tShiftPulang->addDay(); }
+            $menitStandar = $tShiftMasuk->diffInMinutes($tShiftPulang, true);
+            if ($tShiftMasuk->lt($lunchEnd) && $tShiftPulang->gt($lunchStart)) {
+                $menitStandar = max(0, $menitStandar - 60);
+            }
+
+            // Akumulasi total jam standar dan aktual
+            $totalJamStandarKerja += round($menitStandar / 60, 2);
+            $totalJamKerjaAktual += round($menitAktual / 60, 2);
+
+            // Hitung selisih
+            $selisihMenit = $menitAktual - $menitStandar;
+            $selisihJam = round($selisihMenit / 60, 2);
+
+            if ($selisihJam > 0) {
+                $totalSurplusJam += $selisihJam;
+            } elseif ($selisihJam < 0) {
+                $totalDefisitJam += abs($selisihJam);
+            }
+        }
+
+        foreach ($nikList as $n) {
+            $perKaryawan[] = [
+                'nik' => $n,
+                'nama' => $nikToNama[$n] ?? '-',
+                'hariKerja' => $totalHariKerja,
+                'hadir' => (int) ($hadirPerNik[$n] ?? 0),
+                'sakitSurat' => (int) ($sakitSuratPerNik[$n] ?? 0),
+                'cutiTahunan' => (int) ($cutiTahunanPerNik[$n] ?? 0),
+                'izinResmi' => (int) ($izinResmiPerNik[$n] ?? 0),
+                'izinPribadi' => (int) ($izinPribadiPerNik[$n] ?? 0),
+                'telat' => (int) ($telatPerNik[$n] ?? 0),
+                'izinKeluarJam' => (float) ($izinKeluarJamPerNik[$n] ?? 0),
+                'masukSiang' => (int) ($masukSiangPerNik[$n] ?? 0),
+                'pulangCepat' => (int) ($pulangCepatPerNik[$n] ?? 0),
+            ];
+        }
+
+        // Dropdown group pegawai
+        $groups = Karyawan::select('Group_pegawai')
+            ->whereNotNull('Group_pegawai')
+            ->distinct()
+            ->orderBy('Group_pegawai')
+            ->pluck('Group_pegawai');
+
+        // Rata-rata jam izin keluar per karyawan pada scope filter
+        $jumlahKaryawan = max(1, $nikList->count());
+        $rataJamIzinKeluar = round($totalJamIzinKeluar / $jumlahKaryawan, 2);
+
+        // Debug Tidak Masuk untuk NIK terpilih
+        $debugTidakMasuk = [];
+        foreach ($tidakMasuk as $tm) {
+            if ($nik && $tm->vcNik !== $nik) { continue; }
+            $debugTidakMasuk[] = [
+                'nik' => $tm->vcNik,
+                'nama' => $nikToNama[$tm->vcNik] ?? '-',
+                'kode' => $tm->vcKodeAbsen,
+                'keterangan' => $tm->jenisAbsen->vcKeterangan ?? $tm->vcKodeAbsen,
+                'mulai' => $tm->dtTanggalMulai ? Carbon::parse($tm->dtTanggalMulai)->format('Y-m-d') : '-',
+                'selesai' => $tm->dtTanggalSelesai ? Carbon::parse($tm->dtTanggalSelesai)->format('Y-m-d') : '-',
+                'hari' => $tm->jumlah_hari ?? 0,
+            ];
+        }
+
+        return view('absen.statistik.index', [
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'nik' => $nik,
+            'group' => $group,
+            'groups' => $groups,
+            'hadir' => $hadir,
+            'ringkasanTidakMasuk' => $ringkasanTidakMasuk,
+            'totalTidakMasukHari' => $totalTidakMasukHari,
+            'totalJamIzinKeluar' => $totalJamIzinKeluar,
+            'rataJamIzinKeluar' => $rataJamIzinKeluar,
+            'totalJamMasukSiang' => $totalJamMasukSiang,
+            'totalHariKerja' => $totalHariKerja,
+            'perKaryawan' => $perKaryawan,
+            'telat' => $telat,
+            'pulangCepat' => $pulangCepat,
+            'masukSiang' => $masukSiang,
+            'hadirKebijakan' => $hadirKebijakan,
+            'selectedNama' => $selectedNama,
+            'debugMasukSiang' => $debugMasukSiang, // Untuk debugging
+            'debugAllIzinZ003Z004' => $debugAllIzinZ003Z004, // Debug semua izin Z003 dan Z004
+            'debugTelat' => $debugTelat,
+            'debugPulangCepat' => $debugPulangCepat,
+            'debugTidakMasuk' => $debugTidakMasuk,
+            'totalSurplusJam' => $totalSurplusJam,
+            'totalDefisitJam' => $totalDefisitJam,
+            'totalJamStandarKerja' => $totalJamStandarKerja,
+            'totalJamKerjaAktual' => $totalJamKerjaAktual,
+        ]);
+    }
+}
+
+
