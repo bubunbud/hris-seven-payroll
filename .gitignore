@@ -17,3 +17,10 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+# Backup files
+*.sql
+backup_*.sql
+*_backup.sql
+_vendor/
+_app/

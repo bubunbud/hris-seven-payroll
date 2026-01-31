@@ -13,6 +13,8 @@ use App\Models\Izin;
 use App\Models\HariLibur;
 use App\Models\HutangPiutang;
 use App\Models\LemburHeader;
+use App\Models\LemburDetail;
+use App\Traits\HariKerjaHelper;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +22,7 @@ use Illuminate\Support\Facades\Log;
 
 class ClosingController extends Controller
 {
+    use HariKerjaHelper;
     /**
      * Display the closing gaji form
      */
@@ -166,7 +169,9 @@ class ClosingController extends Controller
                 ];
             }
 
-            // 2. Hitung hari kerja (exclude Sabtu, Minggu, hari libur)
+            // 2. Hitung hari kerja (exclude Sabtu, Minggu, hari libur, dengan mempertimbangkan tukar hari kerja)
+            // Note: Perhitungan hari kerja akan dilakukan per karyawan karena tukar hari kerja bisa berbeda per NIK
+            // Untuk perkiraan awal, gunakan perhitungan global (tanpa NIK)
             $hariLiburList = $this->getHariLiburList($tanggalAwal, $tanggalAkhir);
             $jumlahHariKerja = $this->calculateWorkingDays($tanggalAwal, $tanggalAkhir, $hariLiburList);
 
@@ -254,14 +259,32 @@ class ClosingController extends Controller
         $decVarMakan = (float) ($gapok->uang_makan ?? 0);
         $decVarTransport = (float) ($gapok->uang_transport ?? 0);
 
-        // 2. Hitung kehadiran dari t_absen
+        // 1.1. Hitung hari kerja per karyawan (mempertimbangkan tukar hari kerja per NIK)
+        $jumlahHariKerja = $this->calculateHariKerjaWithTukar($tanggalAwal, $tanggalAkhir, $nik);
+        
+        // 1.2. Update hari libur list per karyawan (mempertimbangkan tukar hari kerja per NIK)
+        $hariLiburList = $this->getHariLiburList($tanggalAwal, $tanggalAkhir, $nik);
+
+        // 2. Hitung kehadiran dari t_absen (hanya di hari kerja normal, mempertimbangkan tukar hari kerja)
         $absensi = Absen::where('vcNik', $nik)
             ->whereBetween('dtTanggal', [$tanggalAwal->format('Y-m-d'), $tanggalAkhir->format('Y-m-d')])
             ->get();
 
-        $intHadir = $absensi->where(function ($ab) {
-            return !empty($ab->dtJamMasuk) || !empty($ab->dtJamKeluar);
-        })->count();
+        $intHadir = 0;
+        foreach ($absensi as $absen) {
+            // Hanya hitung sebagai hadir jika:
+            // 1. Ada jam masuk atau keluar
+            // 2. Dan tanggal tersebut adalah hari kerja normal (mempertimbangkan tukar hari kerja)
+            if ((!empty($absen->dtJamMasuk) || !empty($absen->dtJamKeluar))) {
+                $tanggalStr = $absen->dtTanggal instanceof Carbon
+                    ? $absen->dtTanggal->format('Y-m-d')
+                    : Carbon::parse($absen->dtTanggal)->format('Y-m-d');
+                
+                if ($this->isHariKerjaNormal($tanggalStr, $nik)) {
+                    $intHadir++;
+                }
+            }
+        }
 
         // 3. Hitung tidak masuk (Ijin Pribadi I002)
         // Gunakan fungsi helper untuk menghitung hari yang benar-benar overlap dengan periode
@@ -291,11 +314,25 @@ class ClosingController extends Controller
         $totalJamIzinKeluar = $this->calculateTotalJamIzinKeluar($izinKeluar, $karyawan);
         $decPotonganHC = $totalJamIzinKeluar * ($gapokPerBulan / (21 * 8));
 
-        // 7. Hitung lembur
-        $lemburData = $this->calculateLembur($absensi, $hariLiburList, $gapokPerBulan);
+        // 7. Hitung lembur (dengan mempertimbangkan tukar hari kerja)
+        $lemburData = $this->calculateLembur($absensi, $hariLiburList, $gapokPerBulan, $nik);
 
-        // 8. Hitung tunjangan makan dan transport
-        $tunjanganData = $this->calculateTunjanganMakanTransport($absensi, $hariLiburList, $decVarMakan, $decVarTransport, $lemburData);
+        // 7.1. Hitung beban lembur eksternal dari t_lembur_detail (alokasi berdasarkan instruksi kerja lembur)
+        // Method ini mengakumulasi decLemburExternal yang BELUM dihitung di calculateLembur()
+        // Exclude detail yang sudah dihitung di calculateLembur() (yang terkait dengan absensi)
+        $bebanLemburFromDetail = $this->calculateBebanLemburFromDetail($nik, $tanggalAwal, $tanggalAkhir, $absensi);
+
+        // Gabungkan beban lembur eksternal dengan perhitungan yang sudah ada
+        // Hanya menambahkan ke field beban, TIDAK mengubah perhitungan lembur standar (J1, J2, J3, dll)
+        $lemburData['beban_tgi'] += $bebanLemburFromDetail['beban_tgi'];
+        $lemburData['beban_sia_exp'] += $bebanLemburFromDetail['beban_sia_exp'];
+        $lemburData['beban_sia_prod'] += $bebanLemburFromDetail['beban_sia_prod'];
+        $lemburData['beban_rma'] += $bebanLemburFromDetail['beban_rma'];
+        $lemburData['beban_smu'] += $bebanLemburFromDetail['beban_smu'];
+        $lemburData['beban_abn_jkt'] += $bebanLemburFromDetail['beban_abn_jkt'];
+
+        // 8. Hitung tunjangan makan dan transport (dengan mempertimbangkan tukar hari kerja)
+        $tunjanganData = $this->calculateTunjanganMakanTransport($absensi, $hariLiburList, $decVarMakan, $decVarTransport, $lemburData, $nik);
 
         // 9. Hitung potongan BPJS (hanya periode 1)
         $decPotonganBPJSKes = 0;
@@ -370,13 +407,22 @@ class ClosingController extends Controller
             }
         }
 
-        // 12. Hitung kerja hari libur (KHL)
-        $intKHL = $absensi->filter(function ($ab) use ($hariLiburList) {
-            $tanggalStr = $ab->dtTanggal instanceof Carbon
-                ? $ab->dtTanggal->format('Y-m-d')
-                : Carbon::parse($ab->dtTanggal)->format('Y-m-d');
-            return in_array($tanggalStr, $hariLiburList) && !empty($ab->dtJamMasukLembur);
-        })->count();
+        // 12. Hitung kerja hari libur (KHL) - mempertimbangkan tukar hari kerja
+        // KHL = Hari libur (bukan hari kerja normal) dan ada jam masuk/keluar/lembur
+        $intKHL = 0;
+        foreach ($absensi as $absen) {
+            $tanggalStr = $absen->dtTanggal instanceof Carbon
+                ? $absen->dtTanggal->format('Y-m-d')
+                : Carbon::parse($absen->dtTanggal)->format('Y-m-d');
+            
+            // Cek apakah tanggal adalah hari libur (bukan hari kerja normal)
+            $isHariLibur = !$this->isHariKerjaNormal($tanggalStr, $nik);
+            
+            // Jika hari libur dan ada jam masuk/keluar/lembur, maka KHL
+            if ($isHariLibur && (!empty($absen->dtJamMasuk) || !empty($absen->dtJamKeluar) || !empty($absen->dtJamMasukLembur))) {
+                $intKHL++;
+            }
+        }
 
         // 13. Hitung total jam kerja
         $decJamKerja = $absensi->sum(function ($ab) {
@@ -476,47 +522,32 @@ class ClosingController extends Controller
     }
 
     /**
-     * Get list of holidays (including weekends)
+     * Get list of holidays (including weekends, dengan mempertimbangkan tukar hari kerja)
+     * 
+     * @param Carbon $tanggalAwal
+     * @param Carbon $tanggalAkhir
+     * @param string|null $nik NIK karyawan (null untuk semua karyawan)
+     * @return array Array of date strings (Y-m-d format)
      */
-    private function getHariLiburList($tanggalAwal, $tanggalAkhir)
+    private function getHariLiburList($tanggalAwal, $tanggalAkhir, $nik = null)
     {
-        $hariLibur = HariLibur::whereBetween('dtTanggal', [$tanggalAwal->format('Y-m-d'), $tanggalAkhir->format('Y-m-d')])
-            ->pluck('dtTanggal')
-            ->map(function ($tanggal) {
-                return $tanggal instanceof Carbon ? $tanggal->format('Y-m-d') : Carbon::parse($tanggal)->format('Y-m-d');
-            })
-            ->toArray();
-
-        // Tambahkan Sabtu dan Minggu
-        $current = $tanggalAwal->copy();
-        while ($current->lte($tanggalAkhir)) {
-            if (in_array($current->dayOfWeek, [0, 6])) { // 0 = Minggu, 6 = Sabtu
-                $tanggalStr = $current->format('Y-m-d');
-                if (!in_array($tanggalStr, $hariLibur)) {
-                    $hariLibur[] = $tanggalStr;
-                }
-            }
-            $current->addDay();
-        }
-
-        return $hariLibur;
+        // Gunakan helper yang sudah mempertimbangkan tukar hari kerja
+        return $this->getHariLiburWithTukar($tanggalAwal, $tanggalAkhir, $nik);
     }
 
     /**
-     * Calculate working days (exclude weekends and holidays)
+     * Calculate working days (exclude weekends and holidays, dengan mempertimbangkan tukar hari kerja)
+     * 
+     * @param Carbon $tanggalAwal
+     * @param Carbon $tanggalAkhir
+     * @param array|null $hariLiburList (optional, jika null akan dihitung otomatis)
+     * @param string|null $nik NIK karyawan (null untuk semua karyawan)
+     * @return int
      */
-    private function calculateWorkingDays($tanggalAwal, $tanggalAkhir, $hariLiburList)
+    private function calculateWorkingDays($tanggalAwal, $tanggalAkhir, $hariLiburList = null, $nik = null)
     {
-        $count = 0;
-        $current = $tanggalAwal->copy();
-        while ($current->lte($tanggalAkhir)) {
-            $tanggalStr = $current->format('Y-m-d');
-            if (!in_array($tanggalStr, $hariLiburList)) {
-                $count++;
-            }
-            $current->addDay();
-        }
-        return $count;
+        // Gunakan helper yang sudah mempertimbangkan tukar hari kerja
+        return $this->calculateHariKerjaWithTukar($tanggalAwal, $tanggalAkhir, $nik);
     }
 
     /**
@@ -564,7 +595,7 @@ class ClosingController extends Controller
     /**
      * Calculate lembur (overtime) for employee
      */
-    private function calculateLembur($absensi, $hariLiburList, $gapokPerBulan)
+    private function calculateLembur($absensi, $hariLiburList, $gapokPerBulan, $nik = null)
     {
         $jamKerja1 = 0;
         $rupiahKerja1 = 0;
@@ -593,7 +624,9 @@ class ClosingController extends Controller
                 ? $absen->dtTanggal->format('Y-m-d')
                 : Carbon::parse($absen->dtTanggal)->format('Y-m-d');
 
-            $isHariLibur = in_array($tanggalStr, $hariLiburList);
+            // Gunakan helper untuk cek apakah hari kerja normal (mempertimbangkan tukar hari kerja)
+            $isHariKerjaNormal = $this->isHariKerjaNormal($tanggalStr, $nik);
+            $isHariLibur = !$isHariKerjaNormal;
 
             // Hitung jam lembur dengan presisi lebih baik
             $jamMasukLembur = substr((string) $absen->dtJamMasukLembur, 0, 5);
@@ -658,31 +691,58 @@ class ClosingController extends Controller
                 }
             }
 
-            // Hitung beban lembur berdasarkan penanggung biaya
-            $lemburHeader = LemburHeader::find($absen->vcCounter);
-            if ($lemburHeader) {
-                $penanggungBiaya = $lemburHeader->vcPenanggungBiaya ?? '';
-                $bebanLembur = 0;
+            // Hitung beban lembur berdasarkan penanggung beban dari detail
+            // Ambil LemburDetail berdasarkan vcCounterHeader dan NIK
+            $lemburDetail = LemburDetail::where('vcCounterHeader', $absen->vcCounter)
+                ->where('vcNik', $absen->vcNik)
+                ->first();
 
-                if ($isHariLibur) {
-                    $bebanLembur = $rupiahLibur2 + $rupiahLibur3;
-                } else {
-                    $bebanLembur = $rupiahKerja1 + $rupiahKerja2;
-                }
+            if ($lemburDetail && $lemburDetail->decLemburExternal && $lemburDetail->vcPenanggungBebanLembur) {
+                // Gunakan nominal dari decLemburExternal (sudah dihitung saat input)
+                $bebanLembur = (float) $lemburDetail->decLemburExternal;
+                $penanggungBeban = trim($lemburDetail->vcPenanggungBebanLembur);
 
-                // Mapping penanggung biaya ke field beban
-                if (stripos($penanggungBiaya, 'TGI') !== false) {
+                // Mapping penanggung beban ke field beban
+                if ($penanggungBeban === 'TGI') {
                     $bebanTgi += $bebanLembur;
-                } elseif (stripos($penanggungBiaya, 'SIA Export') !== false || stripos($penanggungBiaya, 'SIA-EXP') !== false) {
+                } elseif ($penanggungBeban === 'SIA-EXP') {
                     $bebanSiaExp += $bebanLembur;
-                } elseif (stripos($penanggungBiaya, 'SIA Produksi') !== false || stripos($penanggungBiaya, 'SIA-PROD') !== false || stripos($penanggungBiaya, 'SIA-P11') !== false || stripos($penanggungBiaya, 'SIA-P12') !== false) {
+                } elseif ($penanggungBeban === 'SIA-PROD') {
                     $bebanSiaProd += $bebanLembur;
-                } elseif (stripos($penanggungBiaya, 'RMA') !== false) {
+                } elseif ($penanggungBeban === 'RMA') {
                     $bebanRma += $bebanLembur;
-                } elseif (stripos($penanggungBiaya, 'Sutek') !== false || stripos($penanggungBiaya, 'SMU') !== false) {
+                } elseif ($penanggungBeban === 'SMU') {
                     $bebanSmu += $bebanLembur;
-                } elseif (stripos($penanggungBiaya, 'Abadinusa') !== false || stripos($penanggungBiaya, 'ABN-JKT') !== false) {
+                } elseif ($penanggungBeban === 'ABN-JKT') {
                     $bebanAbnJkt += $bebanLembur;
+                }
+            } else {
+                // Fallback: Jika decLemburExternal tidak ada, hitung seperti sebelumnya (backward compatibility)
+                $lemburHeader = LemburHeader::find($absen->vcCounter);
+                if ($lemburHeader) {
+                    $penanggungBiaya = $lemburHeader->vcPenanggungBiaya ?? '';
+                    $bebanLembur = 0;
+
+                    if ($isHariLibur) {
+                        $bebanLembur = $rupiahLibur2 + $rupiahLibur3;
+                    } else {
+                        $bebanLembur = $rupiahKerja1 + $rupiahKerja2;
+                    }
+
+                    // Mapping penanggung biaya ke field beban (backward compatibility)
+                    if (stripos($penanggungBiaya, 'TGI') !== false) {
+                        $bebanTgi += $bebanLembur;
+                    } elseif (stripos($penanggungBiaya, 'SIA Export') !== false || stripos($penanggungBiaya, 'SIA-EXP') !== false) {
+                        $bebanSiaExp += $bebanLembur;
+                    } elseif (stripos($penanggungBiaya, 'SIA Produksi') !== false || stripos($penanggungBiaya, 'SIA-PROD') !== false || stripos($penanggungBiaya, 'SIA-P11') !== false || stripos($penanggungBiaya, 'SIA-P12') !== false) {
+                        $bebanSiaProd += $bebanLembur;
+                    } elseif (stripos($penanggungBiaya, 'RMA') !== false) {
+                        $bebanRma += $bebanLembur;
+                    } elseif (stripos($penanggungBiaya, 'Sutek') !== false || stripos($penanggungBiaya, 'SMU') !== false) {
+                        $bebanSmu += $bebanLembur;
+                    } elseif (stripos($penanggungBiaya, 'Abadinusa') !== false || stripos($penanggungBiaya, 'ABN-JKT') !== false) {
+                        $bebanAbnJkt += $bebanLembur;
+                    }
                 }
             }
         }
@@ -710,9 +770,97 @@ class ClosingController extends Controller
     }
 
     /**
+     * Calculate beban lembur eksternal dari t_lembur_detail berdasarkan instruksi kerja lembur
+     * Method ini mengakumulasi decLemburExternal yang BELUM dihitung di calculateLembur()
+     * (exclude detail yang sudah dihitung di calculateLembur() yang terkait dengan absensi)
+     * 
+     * @param string $nik NIK karyawan
+     * @param Carbon $tanggalAwal Tanggal awal periode closing
+     * @param Carbon $tanggalAkhir Tanggal akhir periode closing
+     * @param Collection $absensi Collection absensi untuk exclude detail yang sudah dihitung
+     * @return array Array dengan beban lembur per penanggung beban
+     */
+    private function calculateBebanLemburFromDetail($nik, $tanggalAwal, $tanggalAkhir, $absensi)
+    {
+        // Inisialisasi beban lembur per penanggung beban
+        $bebanTgi = 0;
+        $bebanSiaExp = 0;
+        $bebanSiaProd = 0;
+        $bebanRma = 0;
+        $bebanSmu = 0;
+        $bebanAbnJkt = 0;
+
+        // Ambil list vcCounter dari absensi yang sudah dihitung di calculateLembur()
+        // Detail dengan vcCounterHeader yang sama dengan vcCounter di absensi sudah dihitung
+        $excludedCounters = $absensi->whereNotNull('vcCounter')
+            ->pluck('vcCounter')
+            ->unique()
+            ->filter()
+            ->toArray();
+
+        // Query t_lembur_detail JOIN t_lembur_header
+        // Filter berdasarkan NIK, periode (dtTanggalLembur), dan hanya yang sudah ada decLemburExternal
+        // EXCLUDE detail yang vcCounterHeader-nya ada di excludedCounters (sudah dihitung di calculateLembur())
+        $query = LemburDetail::join('t_lembur_header', 't_lembur_detail.vcCounterHeader', '=', 't_lembur_header.vcCounter')
+            ->where('t_lembur_detail.vcNik', $nik)
+            ->whereBetween('t_lembur_header.dtTanggalLembur', [
+                $tanggalAwal->format('Y-m-d'),
+                $tanggalAkhir->format('Y-m-d')
+            ])
+            ->whereNotNull('t_lembur_detail.decLemburExternal')
+            ->whereNotNull('t_lembur_detail.vcPenanggungBebanLembur')
+            ->where('t_lembur_detail.decLemburExternal', '>', 0);
+
+        // Exclude detail yang sudah dihitung di calculateLembur() (yang terkait dengan absensi)
+        if (!empty($excludedCounters)) {
+            $query->whereNotIn('t_lembur_detail.vcCounterHeader', $excludedCounters);
+        }
+
+        $lemburDetails = $query->select(
+                't_lembur_detail.vcPenanggungBebanLembur',
+                DB::raw('SUM(t_lembur_detail.decLemburExternal) as total_beban')
+            )
+            ->groupBy('t_lembur_detail.vcPenanggungBebanLembur')
+            ->get();
+
+        // Mapping hasil query ke field beban yang sesuai
+        foreach ($lemburDetails as $detail) {
+            $penanggungBeban = trim($detail->vcPenanggungBebanLembur);
+            $totalBeban = (float) $detail->total_beban;
+
+            // Mapping penanggung beban ke field beban
+            if ($penanggungBeban === 'TGI') {
+                $bebanTgi += $totalBeban;
+            } elseif ($penanggungBeban === 'SIA-EXP') {
+                $bebanSiaExp += $totalBeban;
+            } elseif ($penanggungBeban === 'SIA-PROD') {
+                $bebanSiaProd += $totalBeban;
+            } elseif ($penanggungBeban === 'RMA') {
+                $bebanRma += $totalBeban;
+            } elseif ($penanggungBeban === 'SMU') {
+                $bebanSmu += $totalBeban;
+            } elseif ($penanggungBeban === 'ABN-JKT') {
+                $bebanAbnJkt += $totalBeban;
+            } else {
+                // Log warning jika ada penanggung beban yang tidak ter-mapping
+                Log::warning("Penanggung beban lembur tidak ter-mapping: {$penanggungBeban} untuk NIK: {$nik}");
+            }
+        }
+
+        return [
+            'beban_tgi' => $bebanTgi,
+            'beban_sia_exp' => $bebanSiaExp,
+            'beban_sia_prod' => $bebanSiaProd,
+            'beban_rma' => $bebanRma,
+            'beban_smu' => $bebanSmu,
+            'beban_abn_jkt' => $bebanAbnJkt,
+        ];
+    }
+
+    /**
      * Calculate tunjangan makan dan transport
      */
-    private function calculateTunjanganMakanTransport($absensi, $hariLiburList, $decVarMakan, $decVarTransport, $lemburData)
+    private function calculateTunjanganMakanTransport($absensi, $hariLiburList, $decVarMakan, $decVarTransport, $lemburData, $nik = null)
     {
         $makanKerja = 0;
         $makanLibur = 0;
@@ -724,7 +872,9 @@ class ClosingController extends Controller
                 ? $absen->dtTanggal->format('Y-m-d')
                 : Carbon::parse($absen->dtTanggal)->format('Y-m-d');
 
-            $isHariLibur = in_array($tanggalStr, $hariLiburList);
+            // Gunakan helper untuk cek apakah hari kerja normal (mempertimbangkan tukar hari kerja)
+            $isHariKerjaNormal = $this->isHariKerjaNormal($tanggalStr, $nik);
+            $isHariLibur = !$isHariKerjaNormal;
 
             // Jika ada jam masuk/keluar, berarti hadir (untuk hari kerja)
             if (!empty($absen->dtJamMasuk) || !empty($absen->dtJamKeluar)) {
@@ -893,6 +1043,7 @@ class ClosingController extends Controller
 
     /**
      * Calculate Alpha (hari kerja yang tidak ada absensi dan tidak ada ijin)
+     * Mempertimbangkan tukar hari kerja
      */
     private function calculateAlpha($nik, $tanggalAwal, $tanggalAkhir, $hariLiburList, $karyawan)
     {
@@ -903,10 +1054,9 @@ class ClosingController extends Controller
         while ($current->lte($tanggalAkhir)) {
             $tanggalStr = $current->format('Y-m-d');
 
-            // Skip hari libur (termasuk weekend)
-            $dayOfWeek = $current->dayOfWeek;
-            $isWeekend = ($dayOfWeek == 0 || $dayOfWeek == 6);
-            if ($isWeekend || in_array($tanggalStr, $hariLiburList)) {
+            // Skip hari libur (termasuk weekend dan tukar hari kerja)
+            // Gunakan helper untuk cek apakah hari kerja normal (mempertimbangkan tukar hari kerja)
+            if (!$this->isHariKerjaNormal($tanggalStr, $nik)) {
                 $current->addDay();
                 continue;
             }
@@ -1081,6 +1231,36 @@ class ClosingController extends Controller
      */
     public function viewGaji(Request $request)
     {
+        // Load karyawan aktif untuk autocomplete lokal
+        $karyawans = Karyawan::where('vcAktif', '1')
+            ->whereNull('Tgl_Berhenti')
+            ->with(['divisi', 'bagian'])
+            ->orderBy('Nama')
+            ->get(['Nik', 'Nama', 'Divisi', 'vcKodeBagian']);
+
+        // Siapkan data sederhana untuk frontend (hindari logic berat di Blade)
+        $karyawanList = $karyawans->map(function ($k) {
+            $divisiNama = '-';
+            if ($k->divisi && isset($k->divisi->vcNamaDivisi)) {
+                $divisiNama = $k->divisi->vcNamaDivisi;
+            } elseif ($k->Divisi) {
+                $divisiNama = $k->Divisi;
+            }
+
+            $bagianNama = '-';
+            if ($k->bagian && isset($k->bagian->vcNamaBagian)) {
+                $bagianNama = $k->bagian->vcNamaBagian;
+            }
+
+            return [
+                'nik' => $k->Nik ?: '',
+                'nama' => $k->Nama ?: '',
+                'divisi' => $divisiNama,
+                'bagian' => $bagianNama,
+                'search' => strtolower(($k->Nik ?: '') . ' ' . ($k->Nama ?: '')),
+            ];
+        })->values();
+
         $query = Closing::with(['karyawan', 'divisi', 'gapok']);
 
         // Filter berdasarkan periode (periode gajian)
@@ -1099,15 +1279,20 @@ class ClosingController extends Controller
         // Filter berdasarkan NIK atau Nama (satu kolom bisa multi pencarian)
         if ($request->filled('search')) {
             $search = $request->search;
-            // Split by comma atau space untuk multi pencarian
-            $searchTerms = preg_split('/[,\s]+/', trim($search));
+            // Split by comma untuk multi pencarian
+            $searchTerms = preg_split('/,\s*/', trim($search));
 
             $query->where(function ($q) use ($searchTerms) {
                 foreach ($searchTerms as $term) {
                     if (!empty(trim($term))) {
-                        $q->orWhere('vcNik', 'like', '%' . trim($term) . '%')
+                        $term = trim($term);
+                        // Jika format "NIK - Nama", ambil NIK saja
+                        if (strpos($term, ' - ') !== false) {
+                            $term = explode(' - ', $term)[0];
+                        }
+                        $q->orWhere('vcNik', 'like', '%' . $term . '%')
                             ->orWhereHas('karyawan', function ($qq) use ($term) {
-                                $qq->where('Nama', 'like', '%' . trim($term) . '%');
+                                $qq->where('Nama', 'like', '%' . $term . '%');
                             });
                     }
                 }
@@ -1148,6 +1333,6 @@ class ClosingController extends Controller
 
         $divisis = Divisi::orderBy('vcKodeDivisi')->get();
 
-        return view('proses.view-gaji.index', compact('records', 'recordsWithPrevious', 'divisis'));
+        return view('proses.view-gaji.index', compact('records', 'recordsWithPrevious', 'divisis', 'karyawanList'));
     }
 }
