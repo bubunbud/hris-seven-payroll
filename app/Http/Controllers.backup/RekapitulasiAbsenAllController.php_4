@@ -1,0 +1,952 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Absen;
+use App\Models\Izin;
+use App\Models\TidakMasuk;
+use App\Models\Karyawan;
+use App\Models\HariLibur;
+use App\Models\Divisi;
+use App\Models\Departemen;
+use Illuminate\Http\Request;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
+class RekapitulasiAbsenAllController extends Controller
+{
+    public function index(Request $request)
+    {
+        // Tingkatkan memory limit dan timeout untuk handle data besar
+        ini_set('memory_limit', '512M');
+        set_time_limit(300); // 5 menit
+        
+        // Default: 3 hari terakhir jika tidak ada filter
+        // Jika ada filter manual, gunakan filter tersebut
+        $dariTanggal = $request->get('dari_tanggal');
+        $sampaiTanggal = $request->get('sampai_tanggal');
+        
+        if ($dariTanggal && $sampaiTanggal) {
+            // Gunakan filter manual yang dipilih user
+            $startDate = $dariTanggal;
+            $endDate = $sampaiTanggal;
+        } else {
+            // Default: 3 hari terakhir untuk mempercepat loading
+            $endDate = Carbon::now()->format('Y-m-d');
+            $startDate = Carbon::now()->subDays(2)->format('Y-m-d'); // 3 hari: hari ini + 2 hari sebelumnya
+        }
+        $divisiId = $request->get('divisi');
+        $departemenId = $request->get('departemen');
+        $groupPegawai = $request->get('group_pegawai');
+
+        // Get divisi dan departemen untuk dropdown
+        $divisis = Divisi::orderBy('vcNamaDivisi')->get();
+        $departemens = Departemen::orderBy('vcNamaDept')->get();
+
+        // Get group pegawai untuk dropdown
+        $groups = Karyawan::select('Group_pegawai')
+            ->whereNotNull('Group_pegawai')
+            ->where('vcAktif', '1')
+            ->distinct()
+            ->orderBy('Group_pegawai')
+            ->pluck('Group_pegawai');
+
+        // Filter karyawan aktif
+        $karyawanQuery = Karyawan::with(['departemen', 'bagian', 'divisi', 'shift'])
+            ->where('vcAktif', '1');
+
+        if ($divisiId) {
+            $karyawanQuery->where('Divisi', $divisiId);
+        }
+        if ($departemenId) {
+            $karyawanQuery->where('Dept', $departemenId);
+        }
+        if ($groupPegawai) {
+            $karyawanQuery->where('Group_pegawai', $groupPegawai);
+        }
+
+        $karyawans = $karyawanQuery->orderBy('Nama')->get();
+
+        // Hitung jumlah hari kerja normal
+        $jumlahHariKerja = $this->calculateHariKerja($startDate, $endDate);
+
+        // Cache holiday dates sekali untuk semua karyawan
+        $holidayDates = HariLibur::whereBetween('dtTanggal', [$startDate, $endDate])
+            ->pluck('dtTanggal')->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+            ->toArray();
+
+        // Pre-load semua data untuk optimasi (batch loading)
+        $nikList = $karyawans->pluck('Nik')->toArray();
+        
+        // Load semua absen untuk semua karyawan sekaligus (dengan eager loading shift)
+        $allAbsen = Absen::with(['karyawan.shift'])
+            ->whereIn('vcNik', $nikList)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->where(function ($q) {
+                $q->whereNotNull('dtJamMasuk')->orWhereNotNull('dtJamKeluar');
+            })
+            ->get()
+            ->groupBy('vcNik');
+
+        // Load semua tidak masuk untuk semua karyawan sekaligus
+        $allTidakMasuk = TidakMasuk::with('jenisAbsen')
+            ->whereIn('vcNik', $nikList)
+            ->where(function ($q) use ($startDate, $endDate) {
+                $q->whereBetween('dtTanggalMulai', [$startDate, $endDate])
+                  ->orWhereBetween('dtTanggalSelesai', [$startDate, $endDate])
+                  ->orWhere(function ($qq) use ($startDate, $endDate) {
+                      $qq->where('dtTanggalMulai', '<=', $startDate)
+                         ->where('dtTanggalSelesai', '>=', $endDate);
+                  });
+            })
+            ->get()
+            ->groupBy('vcNik');
+
+        // Load semua izin keluar untuk semua karyawan sekaligus
+        $allIzin = Izin::whereIn('vcNik', $nikList)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->whereIn('vcKodeIzin', ['Z003', 'Z004'])
+            ->get()
+            ->groupBy('vcNik');
+
+        // Hitung rekapitulasi untuk setiap karyawan dengan data yang sudah di-load
+        $rekapitulasiData = [];
+        foreach ($karyawans as $index => $karyawan) {
+            // Hitung JHK per karyawan berdasarkan Tgl_Masuk
+            $jhkPerKaryawan = $this->calculateJHKPerKaryawan($karyawan, $startDate, $endDate, $holidayDates);
+            
+            $rekapitulasiData[] = $this->calculateRekapitulasiKaryawanOptimized(
+                $karyawan,
+                $startDate,
+                $endDate,
+                $jhkPerKaryawan,
+                $index + 1,
+                $holidayDates,
+                $allAbsen->get($karyawan->Nik, collect()),
+                $allTidakMasuk->get($karyawan->Nik, collect()),
+                $allIzin->get($karyawan->Nik, collect())
+            );
+        }
+
+        return view('absen.rekapitulasi-all.index', [
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'divisiId' => $divisiId,
+            'departemenId' => $departemenId,
+            'groupPegawai' => $groupPegawai,
+            'divisis' => $divisis,
+            'departemens' => $departemens,
+            'groups' => $groups,
+            'jumlahHariKerja' => $jumlahHariKerja,
+            'rekapitulasiData' => $rekapitulasiData,
+        ]);
+    }
+
+    /**
+     * Print/Cetak rekapitulasi absen all
+     */
+    public function print(Request $request)
+    {
+        // Tingkatkan memory limit dan timeout untuk handle data besar
+        ini_set('memory_limit', '512M');
+        set_time_limit(300); // 5 menit
+        
+        $startDate = $request->get('dari_tanggal', Carbon::now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->get('sampai_tanggal', Carbon::now()->endOfMonth()->format('Y-m-d'));
+        $divisiId = $request->get('divisi');
+        $departemenId = $request->get('departemen');
+        $groupPegawai = $request->get('group_pegawai');
+
+        // Filter karyawan aktif
+        $karyawanQuery = Karyawan::with(['departemen', 'bagian', 'divisi', 'shift'])
+            ->where('vcAktif', '1');
+
+        if ($divisiId) {
+            $karyawanQuery->where('Divisi', $divisiId);
+        }
+        if ($departemenId) {
+            $karyawanQuery->where('Dept', $departemenId);
+        }
+        if ($groupPegawai) {
+            $karyawanQuery->where('Group_pegawai', $groupPegawai);
+        }
+
+        $karyawans = $karyawanQuery->orderBy('Nama')->get();
+
+        // Hitung jumlah hari kerja normal
+        $jumlahHariKerja = $this->calculateHariKerja($startDate, $endDate);
+
+        // Cache holiday dates sekali untuk semua karyawan
+        $holidayDates = HariLibur::whereBetween('dtTanggal', [$startDate, $endDate])
+            ->pluck('dtTanggal')->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+            ->toArray();
+
+        // Pre-load semua data untuk optimasi (batch loading)
+        $nikList = $karyawans->pluck('Nik')->toArray();
+        
+        // Load semua absen untuk semua karyawan sekaligus (dengan eager loading shift)
+        $allAbsen = Absen::with(['karyawan.shift'])
+            ->whereIn('vcNik', $nikList)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->where(function ($q) {
+                $q->whereNotNull('dtJamMasuk')->orWhereNotNull('dtJamKeluar');
+            })
+            ->get()
+            ->groupBy('vcNik');
+
+        // Load semua tidak masuk untuk semua karyawan sekaligus
+        $allTidakMasuk = TidakMasuk::with('jenisAbsen')
+            ->whereIn('vcNik', $nikList)
+            ->where(function ($q) use ($startDate, $endDate) {
+                $q->whereBetween('dtTanggalMulai', [$startDate, $endDate])
+                  ->orWhereBetween('dtTanggalSelesai', [$startDate, $endDate])
+                  ->orWhere(function ($qq) use ($startDate, $endDate) {
+                      $qq->where('dtTanggalMulai', '<=', $startDate)
+                         ->where('dtTanggalSelesai', '>=', $endDate);
+                  });
+            })
+            ->get()
+            ->groupBy('vcNik');
+
+        // Load semua izin keluar untuk semua karyawan sekaligus
+        $allIzin = Izin::whereIn('vcNik', $nikList)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->whereIn('vcKodeIzin', ['Z003', 'Z004'])
+            ->get()
+            ->groupBy('vcNik');
+
+        // Hitung rekapitulasi untuk setiap karyawan dengan data yang sudah di-load
+        $rekapitulasiData = [];
+        foreach ($karyawans as $index => $karyawan) {
+            // Hitung JHK per karyawan berdasarkan Tgl_Masuk
+            $jhkPerKaryawan = $this->calculateJHKPerKaryawan($karyawan, $startDate, $endDate, $holidayDates);
+            
+            $rekapitulasiData[] = $this->calculateRekapitulasiKaryawanOptimized(
+                $karyawan,
+                $startDate,
+                $endDate,
+                $jhkPerKaryawan,
+                $index + 1,
+                $holidayDates,
+                $allAbsen->get($karyawan->Nik, collect()),
+                $allTidakMasuk->get($karyawan->Nik, collect()),
+                $allIzin->get($karyawan->Nik, collect())
+            );
+        }
+
+        return view('absen.rekapitulasi-all.print', [
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'jumlahHariKerja' => $jumlahHariKerja,
+            'rekapitulasiData' => $rekapitulasiData,
+        ]);
+    }
+
+    /**
+     * Hitung jumlah hari kerja normal (exclude Sabtu/Minggu & hari libur)
+     */
+    private function calculateHariKerja($startDate, $endDate)
+    {
+        $holidayDates = HariLibur::whereBetween('dtTanggal', [$startDate, $endDate])
+            ->pluck('dtTanggal')->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+            ->toArray();
+        
+        $jumlahHariKerja = 0;
+        $cursor = Carbon::parse($startDate);
+        $end = Carbon::parse($endDate);
+        while ($cursor->lte($end)) {
+            $dow = (int) $cursor->format('w'); // 0=Min,6=Sabtu
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($cursor->format('Y-m-d'), $holidayDates, true);
+            if (!$isWeekend && !$isHoliday) {
+                $jumlahHariKerja++;
+            }
+            $cursor->addDay();
+        }
+        return $jumlahHariKerja;
+    }
+
+    /**
+     * Hitung JHK per karyawan berdasarkan Tgl_Masuk
+     * - Jika Tgl_Masuk <= startDate: JHK = jumlah hari kerja normal (seluruh periode)
+     * - Jika startDate < Tgl_Masuk <= endDate: JHK = jumlah hari kerja normal dari Tgl_Masuk sampai endDate
+     * - Jika Tgl_Masuk > endDate: JHK = 0
+     */
+    private function calculateJHKPerKaryawan($karyawan, $startDate, $endDate, $holidayDates)
+    {
+        // Jika tidak ada Tgl_Masuk, gunakan seluruh periode
+        if (!$karyawan->Tgl_Masuk) {
+            return $this->calculateHariKerja($startDate, $endDate);
+        }
+
+        $tglMasuk = Carbon::parse($karyawan->Tgl_Masuk)->format('Y-m-d');
+        $start = Carbon::parse($startDate);
+        $end = Carbon::parse($endDate);
+
+        // Jika Tgl_Masuk <= startDate: gunakan seluruh periode
+        if ($tglMasuk <= $startDate) {
+            return $this->calculateHariKerja($startDate, $endDate);
+        }
+
+        // Jika Tgl_Masuk > endDate: JHK = 0 (belum masuk kerja)
+        if ($tglMasuk > $endDate) {
+            return 0;
+        }
+
+        // Jika startDate < Tgl_Masuk <= endDate: hitung dari Tgl_Masuk sampai endDate
+        $jumlahHariKerja = 0;
+        $cursor = Carbon::parse($tglMasuk);
+        while ($cursor->lte($end)) {
+            $dow = (int) $cursor->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($cursor->format('Y-m-d'), $holidayDates, true);
+            if (!$isWeekend && !$isHoliday) {
+                $jumlahHariKerja++;
+            }
+            $cursor->addDay();
+        }
+        return $jumlahHariKerja;
+    }
+
+    /**
+     * Hitung rekapitulasi untuk satu karyawan
+     */
+    private function calculateRekapitulasiKaryawan($karyawan, $startDate, $endDate, $jumlahHariKerja, $no)
+    {
+        $nik = $karyawan->Nik;
+
+        // 1. Hadir (H) - hanya hari kerja normal, tidak termasuk lembur hari libur
+        // Filter: hanya hitung absensi di hari kerja normal (bukan weekend & bukan hari libur)
+        $holidayDates = HariLibur::whereBetween('dtTanggal', [$startDate, $endDate])
+            ->pluck('dtTanggal')->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+            ->toArray();
+        
+        $tanggalHadirList = Absen::where('vcNik', $nik)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->where(function ($q) {
+                $q->whereNotNull('dtJamMasuk')->orWhereNotNull('dtJamKeluar');
+            })
+            ->pluck('dtTanggal')
+            ->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+            ->toArray();
+        
+        // Filter hanya hari kerja normal (exclude weekend & hari libur)
+        $hadir = 0;
+        foreach ($tanggalHadirList as $tanggalStr) {
+            $tanggal = Carbon::parse($tanggalStr);
+            $dow = (int) $tanggal->format('w'); // 0=Min,6=Sabtu
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalStr, $holidayDates, true);
+            
+            // Hanya hitung jika bukan weekend dan bukan hari libur
+            if (!$isWeekend && !$isHoliday) {
+                $hadir++;
+            }
+        }
+
+        // 2. Tidak Masuk: agregasi berdasarkan jenis absen
+        $tidakMasuk = TidakMasuk::with('jenisAbsen')
+            ->where('vcNik', $nik)
+            ->where(function ($q) use ($startDate, $endDate) {
+                $q->whereBetween('dtTanggalMulai', [$startDate, $endDate])
+                  ->orWhereBetween('dtTanggalSelesai', [$startDate, $endDate])
+                  ->orWhere(function ($qq) use ($startDate, $endDate) {
+                      $qq->where('dtTanggalMulai', '<=', $startDate)
+                         ->where('dtTanggalSelesai', '>=', $endDate);
+                  });
+            })
+            ->get();
+
+        // Hitung per jenis tidak masuk (hanya hari kerja normal)
+        $sakit = 0;              // S010
+        $izinPribadi = 0;        // I002
+        $izinResmi = 0;          // I001
+        $izinOrganisasi = 0;     // I003
+        $cutiTahunan = 0;        // C010
+        $cutiMelahirkan = 0;     // C011
+
+        foreach ($tidakMasuk as $tm) {
+            if (!$tm->dtTanggalMulai || !$tm->dtTanggalSelesai) continue;
+            
+            $kode = $tm->vcKodeAbsen ?? '';
+            $mulai = Carbon::parse($tm->dtTanggalMulai);
+            $selesai = Carbon::parse($tm->dtTanggalSelesai);
+            
+            // Hitung hanya hari kerja normal dalam range tidak masuk
+            $hariKerjaNormal = 0;
+            $cursor = $mulai->copy();
+            while ($cursor->lte($selesai)) {
+                $tanggalStr = $cursor->format('Y-m-d');
+                $dow = (int) $cursor->format('w');
+                $isWeekend = ($dow === 0 || $dow === 6);
+                $isHoliday = in_array($tanggalStr, $holidayDates, true);
+                
+                // Hanya hitung jika hari kerja normal dan dalam range periode
+                if (!$isWeekend && !$isHoliday && 
+                    $tanggalStr >= $startDate && $tanggalStr <= $endDate) {
+                    $hariKerjaNormal++;
+                }
+                $cursor->addDay();
+            }
+            
+            if ($kode === 'S010') {
+                $sakit += $hariKerjaNormal;
+            } elseif ($kode === 'I002') {
+                $izinPribadi += $hariKerjaNormal;
+            } elseif ($kode === 'I001') {
+                $izinResmi += $hariKerjaNormal;
+            } elseif ($kode === 'I003') {
+                $izinOrganisasi += $hariKerjaNormal;
+            } elseif ($kode === 'C010') {
+                $cutiTahunan += $hariKerjaNormal;
+            } elseif ($kode === 'C011') {
+                $cutiMelahirkan += $hariKerjaNormal;
+            }
+        }
+
+        // 3. Alfa (A) - hari kerja tanpa absen dan tanpa izin/tidak masuk
+        // Filter $tanggalHadirList untuk hanya hari kerja normal (exclude weekend & hari libur)
+        $tanggalHadir = [];
+        foreach ($tanggalHadirList as $tanggalStr) {
+            $tanggal = Carbon::parse($tanggalStr);
+            $dow = (int) $tanggal->format('w'); // 0=Min,6=Sabtu
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalStr, $holidayDates, true);
+            
+            // Hanya masukkan jika hari kerja normal
+            if (!$isWeekend && !$isHoliday) {
+                $tanggalHadir[] = $tanggalStr;
+            }
+        }
+
+        $tanggalTidakMasuk = [];
+        foreach ($tidakMasuk as $tm) {
+            if (!$tm->dtTanggalMulai || !$tm->dtTanggalSelesai) continue;
+            $mulai = Carbon::parse($tm->dtTanggalMulai);
+            $selesai = Carbon::parse($tm->dtTanggalSelesai);
+            $cursor = $mulai->copy();
+            while ($cursor->lte($selesai)) {
+                $tanggalTidakMasuk[] = $cursor->format('Y-m-d');
+                $cursor->addDay();
+            }
+        }
+        $tanggalTidakMasuk = array_unique($tanggalTidakMasuk);
+
+        // Tentukan tanggal mulai perhitungan Alpha berdasarkan Tgl_Masuk (sama seperti JHK)
+        $tanggalMulaiAlpha = $startDate;
+        if ($karyawan->Tgl_Masuk) {
+            $tglMasuk = Carbon::parse($karyawan->Tgl_Masuk)->format('Y-m-d');
+            // Jika Tgl_Masuk di antara range, gunakan Tgl_Masuk sebagai tanggal mulai
+            if ($tglMasuk > $startDate && $tglMasuk <= $endDate) {
+                $tanggalMulaiAlpha = $tglMasuk;
+            }
+            // Jika Tgl_Masuk > endDate, Alpha = 0 (belum masuk kerja)
+            if ($tglMasuk > $endDate) {
+                $tanggalMulaiAlpha = null; // Flag untuk skip perhitungan
+            }
+        }
+
+        $alfa = 0;
+        // Jika tanggalMulaiAlpha null, berarti belum masuk kerja, Alpha = 0
+        if ($tanggalMulaiAlpha !== null) {
+            $cursor = Carbon::parse($tanggalMulaiAlpha);
+            $end = Carbon::parse($endDate);
+            while ($cursor->lte($end)) {
+                $dow = (int) $cursor->format('w');
+                $isWeekend = ($dow === 0 || $dow === 6);
+                $isHoliday = in_array($cursor->format('Y-m-d'), $holidayDates, true);
+                $tanggalStr = $cursor->format('Y-m-d');
+                
+                if (!$isWeekend && !$isHoliday) {
+                    if (!in_array($tanggalStr, $tanggalHadir, true) && 
+                        !in_array($tanggalStr, $tanggalTidakMasuk, true)) {
+                        $alfa++;
+                    }
+                }
+                $cursor->addDay();
+            }
+        }
+
+        // 4. Izin Keluar Komplek Pribadi: MS, IB, PC
+        $izinKeluarPribadi = Izin::where('vcNik', $nik)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->whereIn('vcKodeIzin', ['Z003', 'Z004']) // Izin pribadi
+            ->get();
+
+        $masukSiang = 0;      // MS
+        $izinBiasa = 0;       // IB
+        $pulangCepat = 0;     // PC
+
+        foreach ($izinKeluarPribadi as $izin) {
+            $tanggalIzin = Carbon::parse($izin->dtTanggal)->format('Y-m-d');
+            $tanggalObj = Carbon::parse($izin->dtTanggal);
+            $dow = (int) $tanggalObj->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalIzin, $holidayDates, true);
+            
+            // Hanya hitung jika hari kerja normal
+            if (!$isWeekend && !$isHoliday) {
+                if ($izin->vcTipeIzin === 'Masuk Siang') {
+                    $masukSiang++;
+                } elseif ($izin->vcTipeIzin === 'Izin Biasa') {
+                    $izinBiasa++;
+                } elseif ($izin->vcTipeIzin === 'Pulang Cepat') {
+                    $pulangCepat++;
+                }
+            }
+        }
+
+        // 5. Get absen list untuk perhitungan lainnya
+        $absenList = Absen::with(['karyawan.shift'])
+            ->where('vcNik', $nik)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->get();
+
+        // 6. Terlambat (T) - jam masuk > jam masuk shift-nya (hanya hari kerja normal)
+        $terlambat = 0;
+        foreach ($absenList as $ab) {
+            $tanggalStr = $ab->dtTanggal instanceof Carbon 
+                ? $ab->dtTanggal->format('Y-m-d') 
+                : Carbon::parse($ab->dtTanggal)->format('Y-m-d');
+            
+            $tanggalObj = Carbon::parse($tanggalStr);
+            $dow = (int) $tanggalObj->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalStr, $holidayDates, true);
+            
+            // Hanya hitung jika hari kerja normal
+            if (!$isWeekend && !$isHoliday) {
+                $jamMasuk = $ab->dtJamMasuk ? substr((string) $ab->dtJamMasuk, 0, 5) : null;
+                $shiftMasuk = null;
+                if ($ab->karyawan && $ab->karyawan->shift) {
+                    $shiftMasuk = $ab->karyawan->shift->vcMasuk instanceof Carbon
+                        ? $ab->karyawan->shift->vcMasuk->format('H:i')
+                        : ($ab->karyawan->shift->vcMasuk ? substr((string) $ab->karyawan->shift->vcMasuk, 0, 5) : null);
+                }
+
+                if ($jamMasuk && $shiftMasuk) {
+                    $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                    $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+                    $tShiftMasuk = $tanggal->copy()->setTimeFromTimeString($shiftMasuk);
+                    if ($tMasuk->greaterThan($tShiftMasuk)) {
+                        $selisih = $tShiftMasuk->diffInMinutes($tMasuk);
+                        if ($selisih > 1) {
+                            $terlambat++;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 7. K8 = Jam Kerja Kurang dari 8 jam (hanya hari kerja normal)
+        $kurang8Jam = 0;
+        foreach ($absenList as $ab) {
+            $tanggalStr = $ab->dtTanggal instanceof Carbon 
+                ? $ab->dtTanggal->format('Y-m-d') 
+                : Carbon::parse($ab->dtTanggal)->format('Y-m-d');
+            
+            $tanggalObj = Carbon::parse($tanggalStr);
+            $dow = (int) $tanggalObj->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalStr, $holidayDates, true);
+            
+            // Hanya hitung jika hari kerja normal
+            if (!$isWeekend && !$isHoliday) {
+                if (!$ab->dtJamMasuk || !$ab->dtJamKeluar) continue;
+
+                $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                $jamMasuk = substr((string) $ab->dtJamMasuk, 0, 5);
+                $jamKeluar = substr((string) $ab->dtJamKeluar, 0, 5);
+
+                $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+                $tKeluar = $tanggal->copy()->setTimeFromTimeString($jamKeluar);
+                if ($tKeluar->lessThan($tMasuk)) {
+                    $tKeluar->addDay();
+                }
+
+                // Hitung jam kerja (dikurangi 1 jam istirahat jika melewati 12:00-13:00)
+                $menit = $tMasuk->diffInMinutes($tKeluar, true);
+                $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
+                $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
+                if ($tMasuk->lt($lunchEnd) && $tKeluar->gt($lunchStart)) {
+                    $menit = max(0, $menit - 60);
+                }
+
+                $jamKerja = round($menit / 60, 2);
+                if ($jamKerja < 8.0) {
+                    $kurang8Jam++;
+                }
+            }
+        }
+
+        // 8. Tepat Waktu (TW) - akumulasi (jam masuk <= jam shift-nya <= jam Pulang)
+        // Hanya hitung untuk hari kerja normal yang hadir
+        $tepatWaktu = 0;
+        foreach ($absenList as $ab) {
+            $tanggalStr = $ab->dtTanggal instanceof Carbon 
+                ? $ab->dtTanggal->format('Y-m-d') 
+                : Carbon::parse($ab->dtTanggal)->format('Y-m-d');
+            
+            $tanggalObj = Carbon::parse($tanggalStr);
+            $dow = (int) $tanggalObj->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalStr, $holidayDates, true);
+            
+            // Hanya hitung jika hari kerja normal
+            if (!$isWeekend && !$isHoliday) {
+                $jamMasuk = $ab->dtJamMasuk ? substr((string) $ab->dtJamMasuk, 0, 5) : null;
+                $jamKeluar = $ab->dtJamKeluar ? substr((string) $ab->dtJamKeluar, 0, 5) : null;
+                $shiftMasuk = null;
+                $shiftPulang = null;
+                
+                if ($ab->karyawan && $ab->karyawan->shift) {
+                    $shiftMasuk = $ab->karyawan->shift->vcMasuk instanceof Carbon
+                        ? $ab->karyawan->shift->vcMasuk->format('H:i')
+                        : ($ab->karyawan->shift->vcMasuk ? substr((string) $ab->karyawan->shift->vcMasuk, 0, 5) : null);
+                    $shiftPulang = $ab->karyawan->shift->vcPulang instanceof Carbon
+                        ? $ab->karyawan->shift->vcPulang->format('H:i')
+                        : ($ab->karyawan->shift->vcPulang ? substr((string) $ab->karyawan->shift->vcPulang, 0, 5) : null);
+                }
+
+                if ($jamMasuk && $jamKeluar && $shiftMasuk && $shiftPulang) {
+                    $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                    $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+                    $tKeluar = $tanggal->copy()->setTimeFromTimeString($jamKeluar);
+                    $tShiftMasuk = $tanggal->copy()->setTimeFromTimeString($shiftMasuk);
+                    $tShiftPulang = $tanggal->copy()->setTimeFromTimeString($shiftPulang);
+                    
+                    // Tepat waktu jika: jam masuk <= jam shift masuk DAN jam keluar >= jam shift pulang
+                    if ($tMasuk->lessThanOrEqualTo($tShiftMasuk) && $tKeluar->greaterThanOrEqualTo($tShiftPulang)) {
+                        $tepatWaktu++;
+                    }
+                }
+            }
+        }
+
+        // 9. Persentase Tepat Waktu (%TW)
+        // Jika T + PC + MS = 0, maka %TW = 100%
+        // Jika T + PC + MS <> 0, maka %TW = 100% - ((T + PC + MS) / H) * 100
+        $totalTidakTepatWaktu = $terlambat + $pulangCepat + $masukSiang;
+        if ($totalTidakTepatWaktu == 0) {
+            $persentaseTepatWaktu = 100.00;
+        } else {
+            $persentaseTepatWaktu = $hadir > 0 ? round(100 - (($totalTidakTepatWaktu / $hadir) * 100), 2) : 0;
+        }
+
+        // 10. Persentase Aktual Hadir (%AH) = (H / Jumlah Hari Kerja Normal) * 100
+        $persentaseAktualHadir = $jumlahHariKerja > 0 ? round(($hadir / $jumlahHariKerja) * 100, 2) : 0;
+
+        // 11. Final Absensi secara Kebijakan (%FAK) = (H+S+IR+CT+CM+IO) / Jumlah Hari Kerja Normal * 100
+        $finalAbsensiKebijakan = $jumlahHariKerja > 0 
+            ? round((($hadir + $sakit + $izinResmi + $cutiTahunan + $cutiMelahirkan + $izinOrganisasi) / $jumlahHariKerja) * 100, 2) 
+            : 0;
+
+        return [
+            'no' => $no,
+            'nik' => $karyawan->Nik,
+            'nama' => $karyawan->Nama,
+            'divisi' => $karyawan->divisi->vcNamaDivisi ?? '-',
+            'departemen' => $karyawan->departemen->vcNamaDept ?? '-',
+            'group' => $karyawan->Group_pegawai ?? '-',
+            'tgl_masuk' => $karyawan->Tgl_Masuk ? Carbon::parse($karyawan->Tgl_Masuk)->format('d/m/Y') : '-',
+            's' => $sakit,
+            'i' => $izinPribadi,
+            'a' => $alfa,
+            'ir' => $izinResmi,
+            'io' => $izinOrganisasi,
+            'ct' => $cutiTahunan,
+            'cm' => $cutiMelahirkan,
+            't' => $terlambat,
+            'ms' => $masukSiang,
+            'ib' => $izinBiasa,
+            'pc' => $pulangCepat,
+            'h' => $hadir,
+            'k8' => $kurang8Jam,
+            'jhk' => $jumlahHariKerja,
+            'persentase_tw' => $persentaseTepatWaktu,
+            'persentase_ah' => $persentaseAktualHadir,
+            'persentase_fak' => $finalAbsensiKebijakan,
+        ];
+    }
+
+    /**
+     * Hitung rekapitulasi untuk satu karyawan (OPTIMIZED VERSION)
+     * Menggunakan data yang sudah di-load untuk menghindari query berulang
+     */
+    private function calculateRekapitulasiKaryawanOptimized($karyawan, $startDate, $endDate, $jumlahHariKerja, $no, $holidayDates, $absenList, $tidakMasukList, $izinList)
+    {
+        $nik = $karyawan->Nik;
+
+        // JHK sudah dihitung sebelumnya di method index()/print() berdasarkan Tgl_Masuk
+        // Parameter $jumlahHariKerja sudah berisi JHK yang disesuaikan per karyawan
+
+        // 1. Hadir (H) - hanya hari kerja normal
+        $tanggalHadirList = $absenList->pluck('dtTanggal')
+            ->map(fn($d) => $d instanceof Carbon ? $d->format('Y-m-d') : Carbon::parse($d)->format('Y-m-d'))
+            ->toArray();
+        
+        $hadir = 0;
+        foreach ($tanggalHadirList as $tanggalStr) {
+            $tanggal = Carbon::parse($tanggalStr);
+            $dow = (int) $tanggal->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalStr, $holidayDates, true);
+            
+            if (!$isWeekend && !$isHoliday) {
+                $hadir++;
+            }
+        }
+
+        // 2. Tidak Masuk: agregasi berdasarkan jenis absen
+        $sakit = 0;
+        $izinPribadi = 0;
+        $izinResmi = 0;
+        $izinOrganisasi = 0;
+        $cutiTahunan = 0;
+        $cutiMelahirkan = 0;
+
+        foreach ($tidakMasukList as $tm) {
+            if (!$tm->dtTanggalMulai || !$tm->dtTanggalSelesai) continue;
+            
+            $kode = $tm->vcKodeAbsen ?? '';
+            $mulai = Carbon::parse($tm->dtTanggalMulai);
+            $selesai = Carbon::parse($tm->dtTanggalSelesai);
+            
+            $hariKerjaNormal = 0;
+            $cursor = $mulai->copy();
+            while ($cursor->lte($selesai)) {
+                $tanggalStr = $cursor->format('Y-m-d');
+                $dow = (int) $cursor->format('w');
+                $isWeekend = ($dow === 0 || $dow === 6);
+                $isHoliday = in_array($tanggalStr, $holidayDates, true);
+                
+                if (!$isWeekend && !$isHoliday && 
+                    $tanggalStr >= $startDate && $tanggalStr <= $endDate) {
+                    $hariKerjaNormal++;
+                }
+                $cursor->addDay();
+            }
+            
+            if ($kode === 'S010') {
+                $sakit += $hariKerjaNormal;
+            } elseif ($kode === 'I002') {
+                $izinPribadi += $hariKerjaNormal;
+            } elseif ($kode === 'I001') {
+                $izinResmi += $hariKerjaNormal;
+            } elseif ($kode === 'I003') {
+                $izinOrganisasi += $hariKerjaNormal;
+            } elseif ($kode === 'C010') {
+                $cutiTahunan += $hariKerjaNormal;
+            } elseif ($kode === 'C011') {
+                $cutiMelahirkan += $hariKerjaNormal;
+            }
+        }
+
+        // 3. Alfa (A) - hari kerja tanpa absen dan tanpa izin/tidak masuk
+        $tanggalHadir = [];
+        foreach ($tanggalHadirList as $tanggalStr) {
+            $tanggal = Carbon::parse($tanggalStr);
+            $dow = (int) $tanggal->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalStr, $holidayDates, true);
+            
+            if (!$isWeekend && !$isHoliday) {
+                $tanggalHadir[] = $tanggalStr;
+            }
+        }
+
+        $tanggalTidakMasuk = [];
+        foreach ($tidakMasukList as $tm) {
+            if (!$tm->dtTanggalMulai || !$tm->dtTanggalSelesai) continue;
+            $mulai = Carbon::parse($tm->dtTanggalMulai);
+            $selesai = Carbon::parse($tm->dtTanggalSelesai);
+            $cursor = $mulai->copy();
+            while ($cursor->lte($selesai)) {
+                $tanggalTidakMasuk[] = $cursor->format('Y-m-d');
+                $cursor->addDay();
+            }
+        }
+        $tanggalTidakMasuk = array_unique($tanggalTidakMasuk);
+
+        // Tentukan tanggal mulai perhitungan Alpha berdasarkan Tgl_Masuk (sama seperti JHK)
+        $tanggalMulaiAlpha = $startDate;
+        if ($karyawan->Tgl_Masuk) {
+            $tglMasuk = Carbon::parse($karyawan->Tgl_Masuk)->format('Y-m-d');
+            // Jika Tgl_Masuk di antara range, gunakan Tgl_Masuk sebagai tanggal mulai
+            if ($tglMasuk > $startDate && $tglMasuk <= $endDate) {
+                $tanggalMulaiAlpha = $tglMasuk;
+            }
+            // Jika Tgl_Masuk > endDate, Alpha = 0 (belum masuk kerja)
+            if ($tglMasuk > $endDate) {
+                $tanggalMulaiAlpha = null; // Flag untuk skip perhitungan
+            }
+        }
+
+        $alfa = 0;
+        // Jika tanggalMulaiAlpha null, berarti belum masuk kerja, Alpha = 0
+        if ($tanggalMulaiAlpha !== null) {
+            $cursor = Carbon::parse($tanggalMulaiAlpha);
+            $end = Carbon::parse($endDate);
+            while ($cursor->lte($end)) {
+                $dow = (int) $cursor->format('w');
+                $isWeekend = ($dow === 0 || $dow === 6);
+                $isHoliday = in_array($cursor->format('Y-m-d'), $holidayDates, true);
+                $tanggalStr = $cursor->format('Y-m-d');
+                
+                if (!$isWeekend && !$isHoliday) {
+                    if (!in_array($tanggalStr, $tanggalHadir, true) && 
+                        !in_array($tanggalStr, $tanggalTidakMasuk, true)) {
+                        $alfa++;
+                    }
+                }
+                $cursor->addDay();
+            }
+        }
+
+        // 4. Izin Keluar Komplek Pribadi: MS, IB, PC
+        $masukSiang = 0;
+        $izinBiasa = 0;
+        $pulangCepat = 0;
+
+        foreach ($izinList as $izin) {
+            $tanggalIzin = $izin->dtTanggal instanceof Carbon 
+                ? $izin->dtTanggal->format('Y-m-d') 
+                : Carbon::parse($izin->dtTanggal)->format('Y-m-d');
+            $tanggalObj = Carbon::parse($tanggalIzin);
+            $dow = (int) $tanggalObj->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalIzin, $holidayDates, true);
+            
+            if (!$isWeekend && !$isHoliday) {
+                if ($izin->vcTipeIzin === 'Masuk Siang') {
+                    $masukSiang++;
+                } elseif ($izin->vcTipeIzin === 'Izin Biasa') {
+                    $izinBiasa++;
+                } elseif ($izin->vcTipeIzin === 'Pulang Cepat') {
+                    $pulangCepat++;
+                }
+            }
+        }
+
+        // 5. Terlambat (T) - jam masuk > jam masuk shift-nya
+        $terlambat = 0;
+        foreach ($absenList as $ab) {
+            $tanggalStr = $ab->dtTanggal instanceof Carbon 
+                ? $ab->dtTanggal->format('Y-m-d') 
+                : Carbon::parse($ab->dtTanggal)->format('Y-m-d');
+            
+            $tanggalObj = Carbon::parse($tanggalStr);
+            $dow = (int) $tanggalObj->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalStr, $holidayDates, true);
+            
+            if (!$isWeekend && !$isHoliday) {
+                $jamMasuk = $ab->dtJamMasuk ? substr((string) $ab->dtJamMasuk, 0, 5) : null;
+                $shiftMasuk = null;
+                if ($karyawan->shift) {
+                    $shiftMasuk = $karyawan->shift->vcMasuk instanceof Carbon
+                        ? $karyawan->shift->vcMasuk->format('H:i')
+                        : ($karyawan->shift->vcMasuk ? substr((string) $karyawan->shift->vcMasuk, 0, 5) : null);
+                }
+
+                if ($jamMasuk && $shiftMasuk) {
+                    $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                    $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+                    $tShiftMasuk = $tanggal->copy()->setTimeFromTimeString($shiftMasuk);
+                    if ($tMasuk->greaterThan($tShiftMasuk)) {
+                        $selisih = $tShiftMasuk->diffInMinutes($tMasuk);
+                        if ($selisih > 1) {
+                            $terlambat++;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. K8 = Jam Kerja Kurang dari 8 jam
+        $kurang8Jam = 0;
+        foreach ($absenList as $ab) {
+            $tanggalStr = $ab->dtTanggal instanceof Carbon 
+                ? $ab->dtTanggal->format('Y-m-d') 
+                : Carbon::parse($ab->dtTanggal)->format('Y-m-d');
+            
+            $tanggalObj = Carbon::parse($tanggalStr);
+            $dow = (int) $tanggalObj->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($tanggalStr, $holidayDates, true);
+            
+            if (!$isWeekend && !$isHoliday) {
+                if (!$ab->dtJamMasuk || !$ab->dtJamKeluar) continue;
+
+                $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                $jamMasuk = substr((string) $ab->dtJamMasuk, 0, 5);
+                $jamKeluar = substr((string) $ab->dtJamKeluar, 0, 5);
+
+                $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+                $tKeluar = $tanggal->copy()->setTimeFromTimeString($jamKeluar);
+                if ($tKeluar->lessThan($tMasuk)) {
+                    $tKeluar->addDay();
+                }
+
+                $menit = $tMasuk->diffInMinutes($tKeluar, true);
+                $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
+                $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
+                if ($tMasuk->lt($lunchEnd) && $tKeluar->gt($lunchStart)) {
+                    $menit = max(0, $menit - 60);
+                }
+
+                $jamKerja = round($menit / 60, 2);
+                if ($jamKerja < 8.0) {
+                    $kurang8Jam++;
+                }
+            }
+        }
+
+        // 7. Tepat Waktu (TW) - tidak digunakan di output tapi tetap dihitung untuk konsistensi
+        // (Tidak perlu dihitung karena sudah tidak digunakan)
+
+        // 8. Persentase Tepat Waktu (%TW)
+        $totalTidakTepatWaktu = $terlambat + $pulangCepat + $masukSiang;
+        if ($totalTidakTepatWaktu == 0) {
+            $persentaseTepatWaktu = 100.00;
+        } else {
+            $persentaseTepatWaktu = $hadir > 0 ? round(100 - (($totalTidakTepatWaktu / $hadir) * 100), 2) : 0;
+        }
+
+        // 9. Persentase Aktual Hadir (%AH)
+        $persentaseAktualHadir = $jumlahHariKerja > 0 ? round(($hadir / $jumlahHariKerja) * 100, 2) : 0;
+
+        // 10. Final Absensi secara Kebijakan (%FAK)
+        $finalAbsensiKebijakan = $jumlahHariKerja > 0 
+            ? round((($hadir + $sakit + $izinResmi + $cutiTahunan + $cutiMelahirkan + $izinOrganisasi) / $jumlahHariKerja) * 100, 2) 
+            : 0;
+
+        return [
+            'no' => $no,
+            'nik' => $karyawan->Nik,
+            'nama' => $karyawan->Nama,
+            'divisi' => $karyawan->divisi->vcNamaDivisi ?? '-',
+            'departemen' => $karyawan->departemen->vcNamaDept ?? '-',
+            'group' => $karyawan->Group_pegawai ?? '-',
+            'tgl_masuk' => $karyawan->Tgl_Masuk ? Carbon::parse($karyawan->Tgl_Masuk)->format('d/m/Y') : '-',
+            's' => $sakit,
+            'i' => $izinPribadi,
+            'a' => $alfa,
+            'ir' => $izinResmi,
+            'io' => $izinOrganisasi,
+            'ct' => $cutiTahunan,
+            'cm' => $cutiMelahirkan,
+            't' => $terlambat,
+            'ms' => $masukSiang,
+            'ib' => $izinBiasa,
+            'pc' => $pulangCepat,
+            'h' => $hadir,
+            'k8' => $kurang8Jam,
+            'jhk' => $jumlahHariKerja,
+            'persentase_tw' => $persentaseTepatWaktu,
+            'persentase_ah' => $persentaseAktualHadir,
+            'persentase_fak' => $finalAbsensiKebijakan,
+        ];
+    }
+}
+

@@ -1,0 +1,292 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Absen;
+use App\Models\Karyawan;
+use App\Traits\HariKerjaHelper;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+
+class EditAbsensiController extends Controller
+{
+    use HariKerjaHelper;
+
+    /**
+     * Display list of absensi for editing
+     */
+    public function index(Request $request)
+    {
+        // Default date range (current month)
+        $startDate = $request->get('dari_tanggal', Carbon::now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->get('sampai_tanggal', Carbon::now()->endOfMonth()->format('Y-m-d'));
+
+        // Get filter parameters
+        $nik = $request->get('nik');
+        $nama = $request->get('nama');
+        $group = $request->get('group', 'Semua Group');
+
+        // Build query untuk absen dengan join ke karyawan
+        $absenQuery = DB::table('t_absen')
+            ->join('m_karyawan', 't_absen.vcNik', '=', 'm_karyawan.Nik')
+            ->leftJoin('m_divisi', 'm_karyawan.Divisi', '=', 'm_divisi.vcKodeDivisi')
+            ->leftJoin('m_bagian', 'm_karyawan.vcKodeBagian', '=', 'm_bagian.vcKodeBagian')
+            ->leftJoin('m_shift', 'm_karyawan.vcShift', '=', 'm_shift.vcShift')
+            ->whereBetween('t_absen.dtTanggal', [$startDate, $endDate])
+            ->where('m_karyawan.vcAktif', '1')
+            ->whereNull('m_karyawan.Tgl_Berhenti')
+            ->select(
+                't_absen.dtTanggal',
+                't_absen.vcNik',
+                't_absen.dtJamMasuk',
+                't_absen.dtJamKeluar',
+                't_absen.dtJamMasukLembur',
+                't_absen.dtJamKeluarLembur',
+                'm_karyawan.Nama',
+                'm_karyawan.Divisi',
+                'm_karyawan.vcKodeBagian',
+                'm_karyawan.Group_pegawai',
+                'm_divisi.vcNamaDivisi',
+                'm_bagian.vcNamaBagian',
+                'm_shift.vcMasuk as shift_masuk'
+            );
+
+        // Apply filters
+        if ($nik) {
+            $absenQuery->where('m_karyawan.Nik', 'like', '%' . $nik . '%');
+        }
+        if ($nama) {
+            $absenQuery->where('m_karyawan.Nama', 'like', '%' . $nama . '%');
+        }
+        if ($group !== 'Semua Group') {
+            $absenQuery->where('m_karyawan.Group_pegawai', $group);
+        }
+
+        // Get data with pagination
+        $absens = $absenQuery->orderBy('t_absen.dtTanggal', 'desc')
+            ->orderBy('t_absen.vcNik')
+            ->paginate(50)
+            ->appends($request->query());
+
+        // Process data untuk menampilkan total jam dan status
+        $absens->getCollection()->transform(function ($absen) {
+            $tanggalObj = Carbon::parse($absen->dtTanggal);
+            $totalJam = $this->calculateTotalJam($absen->dtJamMasuk, $absen->dtJamKeluar, $absen->dtTanggal);
+            
+            // Cek apakah hari kerja normal
+            $isHariKerjaNormal = $this->isHariKerjaNormal($absen->dtTanggal, $absen->vcNik);
+            
+            // Cek telat: jam masuk > jam shift masuk (hanya untuk hari kerja normal)
+            $isTelat = false;
+            if ($absen->dtJamMasuk && $absen->shift_masuk && $isHariKerjaNormal) {
+                try {
+                    $jamMasuk = substr((string) $absen->dtJamMasuk, 0, 5);
+                    $shiftMasuk = $absen->shift_masuk instanceof Carbon
+                        ? $absen->shift_masuk->format('H:i')
+                        : substr((string) $absen->shift_masuk, 0, 5);
+                    
+                    $tMasuk = $tanggalObj->copy()->setTimeFromTimeString($jamMasuk);
+                    $tShiftMasuk = $tanggalObj->copy()->setTimeFromTimeString($shiftMasuk);
+                    
+                    if ($tMasuk->greaterThan($tShiftMasuk)) {
+                        $isTelat = true;
+                    }
+                } catch (\Exception $e) {
+                    // Skip jika ada error parsing waktu
+                }
+            }
+            
+            // Tentukan status
+            $status = '';
+            if (!$absen->dtJamMasuk && !$absen->dtJamKeluar) {
+                $status = 'Tidak Masuk';
+            } elseif ($isTelat) {
+                $status = 'Telat';
+            } elseif (($absen->dtJamMasuk && !$absen->dtJamKeluar) || (!$absen->dtJamMasuk && $absen->dtJamKeluar)) {
+                $status = 'ATL';
+            } elseif (!$isHariKerjaNormal && ($absen->dtJamMasuk || $absen->dtJamKeluar || $absen->dtJamMasukLembur)) {
+                $status = 'KHL';
+            } elseif ($absen->dtJamMasuk && $absen->dtJamKeluar && $totalJam >= 8 && $isHariKerjaNormal) {
+                $status = 'HKN';
+            } elseif ($absen->dtJamMasuk && $absen->dtJamKeluar && $totalJam > 0 && $totalJam < 8 && $isHariKerjaNormal) {
+                $status = 'HC';
+            } else {
+                $status = 'ATL';
+            }
+
+            return [
+                'dtTanggal' => $absen->dtTanggal,
+                'vcNik' => $absen->vcNik,
+                'Nama' => $absen->Nama,
+                'Divisi' => $absen->Divisi,
+                'vcKodeBagian' => $absen->vcKodeBagian,
+                'vcNamaDivisi' => $absen->vcNamaDivisi,
+                'vcNamaBagian' => $absen->vcNamaBagian,
+                'Group_pegawai' => $absen->Group_pegawai,
+                'dtJamMasuk' => $absen->dtJamMasuk,
+                'dtJamKeluar' => $absen->dtJamKeluar,
+                'dtJamMasukLembur' => $absen->dtJamMasukLembur,
+                'dtJamKeluarLembur' => $absen->dtJamKeluarLembur,
+                'total_jam' => $totalJam,
+                'shift_masuk' => $absen->shift_masuk ?? null,
+                'status' => $status,
+            ];
+        });
+
+        // Get unique groups for filter
+        $groups = Karyawan::select('Group_pegawai')
+            ->distinct()
+            ->whereNotNull('Group_pegawai')
+            ->where('vcAktif', '1')
+            ->whereNull('Tgl_Berhenti')
+            ->orderBy('Group_pegawai')
+            ->pluck('Group_pegawai');
+
+        return view('edit-absensi.index', compact(
+            'absens',
+            'startDate',
+            'endDate',
+            'nik',
+            'nama',
+            'group',
+            'groups'
+        ));
+    }
+
+    /**
+     * Show form to edit absensi
+     */
+    public function edit(Request $request)
+    {
+        $tanggal = $request->get('tanggal');
+        $nik = $request->get('nik');
+
+        if (!$tanggal || !$nik) {
+            return redirect()->route('edit-absensi.index')
+                ->with('error', 'Parameter tanggal dan NIK harus diisi.');
+        }
+
+        // Get absensi data
+        $absen = Absen::where('dtTanggal', $tanggal)
+            ->where('vcNik', $nik)
+            ->with(['karyawan.divisi', 'karyawan.bagian', 'karyawan.shift'])
+            ->first();
+
+        if (!$absen) {
+            return redirect()->route('edit-absensi.index')
+                ->with('error', 'Data absensi tidak ditemukan.');
+        }
+
+        return view('edit-absensi.edit', compact('absen'));
+    }
+
+    /**
+     * Update absensi data
+     */
+    public function update(Request $request)
+    {
+        $request->validate([
+            'tanggal' => 'required|date',
+            'nik' => 'required|string',
+            'jam_masuk' => 'nullable|date_format:H:i',
+            'jam_keluar' => 'nullable|date_format:H:i',
+            'jam_masuk_lembur' => 'nullable|date_format:H:i',
+            'jam_keluar_lembur' => 'nullable|date_format:H:i',
+        ]);
+
+        $tanggal = $request->get('tanggal');
+        $nik = $request->get('nik');
+
+        // Pastikan tanggal dan nik adalah string
+        $tanggalStr = Carbon::parse($tanggal)->format('Y-m-d');
+        $nikStr = (string) $nik;
+
+        // Cek apakah data absensi ada
+        $absenExists = DB::table('t_absen')
+            ->where('dtTanggal', $tanggalStr)
+            ->where('vcNik', $nikStr)
+            ->exists();
+
+        if (!$absenExists) {
+            return redirect()->route('edit-absensi.index')
+                ->with('error', 'Data absensi tidak ditemukan.');
+        }
+
+        // Ambil keterangan lama jika ada
+        $absenOld = DB::table('t_absen')
+            ->where('dtTanggal', $tanggalStr)
+            ->where('vcNik', $nikStr)
+            ->first();
+
+        // Format jam jika ada (tambahkan :00 jika hanya HH:MM)
+        $jamMasuk = $request->get('jam_masuk')
+            ? (strlen($request->get('jam_masuk')) == 5 ? $request->get('jam_masuk') . ':00' : substr($request->get('jam_masuk'), 0, 8))
+            : null;
+
+        $jamKeluar = $request->get('jam_keluar')
+            ? (strlen($request->get('jam_keluar')) == 5 ? $request->get('jam_keluar') . ':00' : substr($request->get('jam_keluar'), 0, 8))
+            : null;
+
+        $jamMasukLembur = $request->get('jam_masuk_lembur')
+            ? (strlen($request->get('jam_masuk_lembur')) == 5 ? $request->get('jam_masuk_lembur') . ':00' : substr($request->get('jam_masuk_lembur'), 0, 8))
+            : null;
+
+        $jamKeluarLembur = $request->get('jam_keluar_lembur')
+            ? (strlen($request->get('jam_keluar_lembur')) == 5 ? $request->get('jam_keluar_lembur') . ':00' : substr($request->get('jam_keluar_lembur'), 0, 8))
+            : null;
+
+        // Update keterangan (simpan hanya keterangan terbaru untuk menghindari error panjang kolom)
+        // Kolom vcketerangan kemungkinan memiliki panjang terbatas (dari error, sepertinya < 30 karakter)
+        // Untuk aman, kita hanya simpan keterangan singkat saja dengan format yang lebih pendek
+        $keteranganBaru = 'Edit: ' . Carbon::now()->format('d/m H:i');
+        
+        // Batasi panjang maksimal 20 karakter (untuk aman, karena error terjadi pada string ~30 karakter)
+        $maxLength = 20;
+        if (strlen($keteranganBaru) > $maxLength) {
+            $keteranganBaru = substr($keteranganBaru, 0, $maxLength);
+        }
+
+        // Update menggunakan DB::table karena composite primary key
+        $affectedRows = DB::table('t_absen')
+            ->where('dtTanggal', $tanggalStr)
+            ->where('vcNik', $nikStr)
+            ->update([
+                'dtJamMasuk' => $jamMasuk,
+                'dtJamKeluar' => $jamKeluar,
+                'dtJamMasukLembur' => $jamMasukLembur,
+                'dtJamKeluarLembur' => $jamKeluarLembur,
+                'vcketerangan' => $keteranganBaru,
+                'dtChange' => Carbon::now()->format('Y-m-d H:i:s'),
+            ]);
+
+        if ($affectedRows > 0) {
+            return redirect()->route('edit-absensi.index')
+                ->with('success', 'Data absensi berhasil diupdate.');
+        } else {
+            return redirect()->route('edit-absensi.index')
+                ->with('error', 'Gagal mengupdate data absensi.');
+        }
+    }
+
+    /**
+     * Helper: Calculate total hours from jam masuk and keluar
+     */
+    private function calculateTotalJam($dtJamMasuk, $dtJamKeluar, $dtTanggal)
+    {
+        if (!$dtJamMasuk || !$dtJamKeluar) {
+            return 0;
+        }
+
+        $tanggal = Carbon::parse($dtTanggal);
+        $masuk = $tanggal->copy()->setTimeFromTimeString((string) $dtJamMasuk);
+        $keluar = $tanggal->copy()->setTimeFromTimeString((string) $dtJamKeluar);
+
+        if ($keluar->lessThan($masuk)) {
+            $keluar->addDay();
+        }
+
+        return round($masuk->diffInHours($keluar, true), 1);
+    }
+}
+

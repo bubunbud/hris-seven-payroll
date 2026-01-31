@@ -1,0 +1,389 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Absen;
+use App\Models\Izin;
+use App\Models\TidakMasuk;
+use App\Models\Karyawan;
+use App\Models\HariLibur;
+use App\Models\Divisi;
+use App\Models\Departemen;
+use Illuminate\Http\Request;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
+class RekapitulasiAbsenAllController extends Controller
+{
+    public function index(Request $request)
+    {
+        $startDate = $request->get('dari_tanggal', Carbon::now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->get('sampai_tanggal', Carbon::now()->endOfMonth()->format('Y-m-d'));
+        $divisiId = $request->get('divisi');
+        $departemenId = $request->get('departemen');
+        $groupPegawai = $request->get('group_pegawai');
+
+        // Get divisi dan departemen untuk dropdown
+        $divisis = Divisi::orderBy('vcNamaDivisi')->get();
+        $departemens = Departemen::orderBy('vcNamaDept')->get();
+
+        // Get group pegawai untuk dropdown
+        $groups = Karyawan::select('Group_pegawai')
+            ->whereNotNull('Group_pegawai')
+            ->where('vcAktif', '1')
+            ->distinct()
+            ->orderBy('Group_pegawai')
+            ->pluck('Group_pegawai');
+
+        // Filter karyawan aktif
+        $karyawanQuery = Karyawan::with(['departemen', 'bagian', 'divisi', 'shift'])
+            ->where('vcAktif', '1');
+
+        if ($divisiId) {
+            $karyawanQuery->where('Divisi', $divisiId);
+        }
+        if ($departemenId) {
+            $karyawanQuery->where('Dept', $departemenId);
+        }
+        if ($groupPegawai) {
+            $karyawanQuery->where('Group_pegawai', $groupPegawai);
+        }
+
+        $karyawans = $karyawanQuery->orderBy('Nama')->get();
+
+        // Hitung jumlah hari kerja normal
+        $jumlahHariKerja = $this->calculateHariKerja($startDate, $endDate);
+
+        // Hitung rekapitulasi untuk setiap karyawan
+        $rekapitulasiData = [];
+        foreach ($karyawans as $index => $karyawan) {
+            $rekapitulasiData[] = $this->calculateRekapitulasiKaryawan(
+                $karyawan,
+                $startDate,
+                $endDate,
+                $jumlahHariKerja,
+                $index + 1
+            );
+        }
+
+        return view('absen.rekapitulasi-all.index', [
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'divisiId' => $divisiId,
+            'departemenId' => $departemenId,
+            'groupPegawai' => $groupPegawai,
+            'divisis' => $divisis,
+            'departemens' => $departemens,
+            'groups' => $groups,
+            'jumlahHariKerja' => $jumlahHariKerja,
+            'rekapitulasiData' => $rekapitulasiData,
+        ]);
+    }
+
+    /**
+     * Print/Cetak rekapitulasi absen all
+     */
+    public function print(Request $request)
+    {
+        $startDate = $request->get('dari_tanggal', Carbon::now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->get('sampai_tanggal', Carbon::now()->endOfMonth()->format('Y-m-d'));
+        $divisiId = $request->get('divisi');
+        $departemenId = $request->get('departemen');
+        $groupPegawai = $request->get('group_pegawai');
+
+        // Filter karyawan aktif
+        $karyawanQuery = Karyawan::with(['departemen', 'bagian', 'divisi', 'shift'])
+            ->where('vcAktif', '1');
+
+        if ($divisiId) {
+            $karyawanQuery->where('Divisi', $divisiId);
+        }
+        if ($departemenId) {
+            $karyawanQuery->where('Dept', $departemenId);
+        }
+        if ($groupPegawai) {
+            $karyawanQuery->where('Group_pegawai', $groupPegawai);
+        }
+
+        $karyawans = $karyawanQuery->orderBy('Nama')->get();
+
+        // Hitung jumlah hari kerja normal
+        $jumlahHariKerja = $this->calculateHariKerja($startDate, $endDate);
+
+        // Hitung rekapitulasi untuk setiap karyawan
+        $rekapitulasiData = [];
+        foreach ($karyawans as $index => $karyawan) {
+            $rekapitulasiData[] = $this->calculateRekapitulasiKaryawan(
+                $karyawan,
+                $startDate,
+                $endDate,
+                $jumlahHariKerja,
+                $index + 1
+            );
+        }
+
+        return view('absen.rekapitulasi-all.print', [
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'jumlahHariKerja' => $jumlahHariKerja,
+            'rekapitulasiData' => $rekapitulasiData,
+        ]);
+    }
+
+    /**
+     * Hitung jumlah hari kerja normal (exclude Sabtu/Minggu & hari libur)
+     */
+    private function calculateHariKerja($startDate, $endDate)
+    {
+        $holidayDates = HariLibur::whereBetween('dtTanggal', [$startDate, $endDate])
+            ->pluck('dtTanggal')->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+            ->toArray();
+        
+        $jumlahHariKerja = 0;
+        $cursor = Carbon::parse($startDate);
+        $end = Carbon::parse($endDate);
+        while ($cursor->lte($end)) {
+            $dow = (int) $cursor->format('w'); // 0=Min,6=Sabtu
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($cursor->format('Y-m-d'), $holidayDates, true);
+            if (!$isWeekend && !$isHoliday) {
+                $jumlahHariKerja++;
+            }
+            $cursor->addDay();
+        }
+        return $jumlahHariKerja;
+    }
+
+    /**
+     * Hitung rekapitulasi untuk satu karyawan
+     */
+    private function calculateRekapitulasiKaryawan($karyawan, $startDate, $endDate, $jumlahHariKerja, $no)
+    {
+        $nik = $karyawan->Nik;
+
+        // 1. Hadir (H)
+        $hadir = Absen::where('vcNik', $nik)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->where(function ($q) {
+                $q->whereNotNull('dtJamMasuk')->orWhereNotNull('dtJamKeluar');
+            })
+            ->count();
+
+        // 2. Tidak Masuk: agregasi berdasarkan jenis absen
+        $tidakMasuk = TidakMasuk::with('jenisAbsen')
+            ->where('vcNik', $nik)
+            ->where(function ($q) use ($startDate, $endDate) {
+                $q->whereBetween('dtTanggalMulai', [$startDate, $endDate])
+                  ->orWhereBetween('dtTanggalSelesai', [$startDate, $endDate])
+                  ->orWhere(function ($qq) use ($startDate, $endDate) {
+                      $qq->where('dtTanggalMulai', '<=', $startDate)
+                         ->where('dtTanggalSelesai', '>=', $endDate);
+                  });
+            })
+            ->get();
+
+        // Hitung per jenis tidak masuk
+        $sakit = 0;              // S010
+        $izinPribadi = 0;        // I002
+        $izinResmi = 0;          // I001
+        $izinOrganisasi = 0;     // I003
+        $cutiTahunan = 0;        // C010
+        $cutiMelahirkan = 0;     // C011
+
+        foreach ($tidakMasuk as $tm) {
+            $hari = $tm->jumlah_hari ?? 0;
+            $kode = $tm->vcKodeAbsen ?? '';
+            
+            if ($kode === 'S010') {
+                $sakit += $hari;
+            } elseif ($kode === 'I002') {
+                $izinPribadi += $hari;
+            } elseif ($kode === 'I001') {
+                $izinResmi += $hari;
+            } elseif ($kode === 'I003') {
+                $izinOrganisasi += $hari;
+            } elseif ($kode === 'C010') {
+                $cutiTahunan += $hari;
+            } elseif ($kode === 'C011') {
+                $cutiMelahirkan += $hari;
+            }
+        }
+
+        // 3. Alfa (A) - hari kerja tanpa absen dan tanpa izin/tidak masuk
+        $tanggalHadir = Absen::where('vcNik', $nik)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->where(function ($q) {
+                $q->whereNotNull('dtJamMasuk')->orWhereNotNull('dtJamKeluar');
+            })
+            ->pluck('dtTanggal')
+            ->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+            ->toArray();
+
+        $holidayDates = HariLibur::whereBetween('dtTanggal', [$startDate, $endDate])
+            ->pluck('dtTanggal')->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+            ->toArray();
+
+        $tanggalTidakMasuk = [];
+        foreach ($tidakMasuk as $tm) {
+            if (!$tm->dtTanggalMulai || !$tm->dtTanggalSelesai) continue;
+            $mulai = Carbon::parse($tm->dtTanggalMulai);
+            $selesai = Carbon::parse($tm->dtTanggalSelesai);
+            $cursor = $mulai->copy();
+            while ($cursor->lte($selesai)) {
+                $tanggalTidakMasuk[] = $cursor->format('Y-m-d');
+                $cursor->addDay();
+            }
+        }
+        $tanggalTidakMasuk = array_unique($tanggalTidakMasuk);
+
+        $alfa = 0;
+        $cursor = Carbon::parse($startDate);
+        $end = Carbon::parse($endDate);
+        while ($cursor->lte($end)) {
+            $dow = (int) $cursor->format('w');
+            $isWeekend = ($dow === 0 || $dow === 6);
+            $isHoliday = in_array($cursor->format('Y-m-d'), $holidayDates, true);
+            $tanggalStr = $cursor->format('Y-m-d');
+            
+            if (!$isWeekend && !$isHoliday) {
+                if (!in_array($tanggalStr, $tanggalHadir, true) && 
+                    !in_array($tanggalStr, $tanggalTidakMasuk, true)) {
+                    $alfa++;
+                }
+            }
+            $cursor->addDay();
+        }
+
+        // 4. Pulang Cepat (PC)
+        $absenList = Absen::with(['karyawan.shift'])
+            ->where('vcNik', $nik)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->get();
+
+        $pulangCepat = 0;
+        foreach ($absenList as $ab) {
+            $jamKeluar = $ab->dtJamKeluar ? substr((string) $ab->dtJamKeluar, 0, 5) : null;
+            $shiftPulang = null;
+            if ($ab->karyawan && $ab->karyawan->shift) {
+                $shiftPulang = $ab->karyawan->shift->vcPulang instanceof Carbon
+                    ? $ab->karyawan->shift->vcPulang->format('H:i')
+                    : ($ab->karyawan->shift->vcPulang ? substr((string) $ab->karyawan->shift->vcPulang, 0, 5) : null);
+            }
+            if ($jamKeluar && $shiftPulang) {
+                $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                $tKeluar = $tanggal->copy()->setTimeFromTimeString($jamKeluar);
+                $tShiftPulang = $tanggal->copy()->setTimeFromTimeString($shiftPulang);
+                if ($tKeluar->lessThan($tShiftPulang)) {
+                    $pulangCepat++;
+                }
+            }
+        }
+
+        // 5. Terlambat (T)
+        $terlambat = 0;
+        foreach ($absenList as $ab) {
+            $jamMasuk = $ab->dtJamMasuk ? substr((string) $ab->dtJamMasuk, 0, 5) : null;
+            $shiftMasuk = null;
+            if ($ab->karyawan && $ab->karyawan->shift) {
+                $shiftMasuk = $ab->karyawan->shift->vcMasuk instanceof Carbon
+                    ? $ab->karyawan->shift->vcMasuk->format('H:i')
+                    : ($ab->karyawan->shift->vcMasuk ? substr((string) $ab->karyawan->shift->vcMasuk, 0, 5) : null);
+            }
+
+            if ($jamMasuk && $shiftMasuk) {
+                $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+                $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+                $tShiftMasuk = $tanggal->copy()->setTimeFromTimeString($shiftMasuk);
+                if ($tMasuk->greaterThan($tShiftMasuk)) {
+                    $selisih = $tShiftMasuk->diffInMinutes($tMasuk);
+                    if ($selisih > 1) {
+                        $terlambat++;
+                    }
+                }
+            }
+        }
+
+        // 6. Masuk Siang / Datang Telat karena sudah ijin (DT) - dari izin Z004
+        $izinKeluar = Izin::with(['karyawan.shift'])
+            ->where('vcNik', $nik)
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->where('vcKodeIzin', 'Z004')
+            ->get();
+
+        $datangTelat = 0;
+        foreach ($izinKeluar as $iz) {
+            if ($iz->vcTipeIzin === 'Masuk Siang') {
+                $datangTelat++;
+            }
+        }
+
+        // 7. <8 Jam (kerja kurang dari 8 jam)
+        $kurang8Jam = 0;
+        foreach ($absenList as $ab) {
+            if (!$ab->dtJamMasuk || !$ab->dtJamKeluar) continue;
+
+            $tanggal = $ab->dtTanggal instanceof Carbon ? $ab->dtTanggal->copy() : Carbon::parse($ab->dtTanggal);
+            $jamMasuk = substr((string) $ab->dtJamMasuk, 0, 5);
+            $jamKeluar = substr((string) $ab->dtJamKeluar, 0, 5);
+
+            $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+            $tKeluar = $tanggal->copy()->setTimeFromTimeString($jamKeluar);
+            if ($tKeluar->lessThan($tMasuk)) {
+                $tKeluar->addDay();
+            }
+
+            // Hitung jam kerja (dikurangi 1 jam istirahat jika melewati 12:00-13:00)
+            $menit = $tMasuk->diffInMinutes($tKeluar, true);
+            $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
+            $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
+            if ($tMasuk->lt($lunchEnd) && $tKeluar->gt($lunchStart)) {
+                $menit = max(0, $menit - 60);
+            }
+
+            $jamKerja = round($menit / 60, 2);
+            if ($jamKerja < 8.0) {
+                $kurang8Jam++;
+            }
+        }
+
+        // 8. Tepat Waktu (TW) - hadir tanpa terlambat dan tanpa masuk siang
+        $tepatWaktu = $hadir - $terlambat - $datangTelat;
+        if ($tepatWaktu < 0) $tepatWaktu = 0;
+
+        // 9. Tidak Absen (TA) - sama dengan Alfa
+        $tidakAbsen = $alfa;
+
+        // 10. Persentase Hadir (%H)
+        $persentaseHadir = $jumlahHariKerja > 0 ? round(($hadir / $jumlahHariKerja) * 100, 2) : 0;
+
+        // 11. Persentase Tepat Waktu (%TW)
+        $persentaseTepatWaktu = $hadir > 0 ? round(($tepatWaktu / $hadir) * 100, 2) : 0;
+
+        return [
+            'no' => $no,
+            'nik' => $karyawan->Nik,
+            'nama' => $karyawan->Nama,
+            'divisi' => $karyawan->divisi->vcNamaDivisi ?? '-',
+            'departemen' => $karyawan->departemen->vcNamaDept ?? '-',
+            'group' => $karyawan->Group_pegawai ?? '-',
+            's' => $sakit,
+            'i' => $izinPribadi,
+            'a' => $alfa,
+            'ir' => $izinResmi,
+            'io' => $izinOrganisasi,
+            'ct' => $cutiTahunan,
+            'cm' => $cutiMelahirkan,
+            'pc' => $pulangCepat,
+            't' => $terlambat,
+            'dt' => $datangTelat,
+            'ta' => $tidakAbsen,
+            'tw' => $tepatWaktu,
+            'h' => $hadir,
+            'kurang8' => $kurang8Jam,
+            'jhk' => $jumlahHariKerja,
+            'persentase_h' => $persentaseHadir,
+            'persentase_tw' => $persentaseTepatWaktu,
+        ];
+    }
+}
+

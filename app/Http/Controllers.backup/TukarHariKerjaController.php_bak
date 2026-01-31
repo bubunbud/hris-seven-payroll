@@ -1,0 +1,357 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
+use App\Models\TukarHariKerja;
+use App\Models\TukarHariKerjaDetail;
+use App\Models\Karyawan;
+use App\Models\Divisi;
+use App\Models\Departemen;
+use App\Models\Bagian;
+use App\Models\HariLibur;
+
+class TukarHariKerjaController extends Controller
+{
+    /**
+     * Display a listing of the resource.
+     */
+    public function index(Request $request)
+    {
+        $query = TukarHariKerja::with(['divisi', 'karyawan'])
+            ->orderByRaw('COALESCE(dtCreatedAt, tanggal_libur, NOW()) DESC')
+            ->orderBy('tanggal_libur', 'desc')
+            ->orderBy('nik', 'asc');
+
+        // Filter by tanggal
+        if ($request->filled('dari_tanggal')) {
+            $query->where('tanggal_libur', '>=', $request->dari_tanggal);
+        }
+        if ($request->filled('sampai_tanggal')) {
+            $query->where('tanggal_libur', '<=', $request->sampai_tanggal);
+        }
+
+        // Filter by scope
+        if ($request->filled('scope')) {
+            $query->where('vcScope', $request->scope);
+        }
+
+        // Filter by status
+        if ($request->filled('status')) {
+            $query->where('vcStatus', $request->status);
+        }
+
+        $tukarHariKerja = $query->paginate(20);
+
+        return view('absen.tukar-hari-kerja.index', compact('tukarHariKerja'));
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     */
+    public function create()
+    {
+        $divisis = Divisi::orderBy('vcKodeDivisi')->get();
+        $departemens = Departemen::orderBy('vcKodeDept')->get();
+        $bagians = Bagian::orderBy('vcKodeBagian')->get();
+
+        return view('absen.tukar-hari-kerja.create', compact('divisis', 'departemens', 'bagians'));
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     */
+    public function store(Request $request)
+    {
+        // Handle karyawan_ids jika berupa JSON string
+        if ($request->has('karyawan_ids') && is_string($request->karyawan_ids)) {
+            $karyawanIds = json_decode($request->karyawan_ids, true);
+            $request->merge(['karyawan_ids' => $karyawanIds ?? []]);
+        }
+
+        $request->validate([
+            'dtTanggalLibur' => 'required|date',
+            'dtTanggalKerja' => 'required|date|different:dtTanggalLibur',
+            'vcTipeTukar' => 'required|in:LIBUR_KE_KERJA,KERJA_KE_LIBUR',
+            'vcScope' => 'required|in:PERORANGAN,GROUP,SEMUA_BU',
+            'vcKeterangan' => 'nullable|string|max:255',
+            'karyawan_ids' => 'required_if:vcScope,PERORANGAN|array',
+            'karyawan_ids.*' => 'exists:m_karyawan,Nik',
+            'vcKodeDivisi' => 'required_if:vcScope,GROUP,SEMUA_BU|exists:m_divisi,vcKodeDivisi',
+            'vcKodeDept' => 'nullable|exists:m_dept,vcKodeDept',
+            'vcKodeBagian' => 'nullable|exists:m_bagian,vcKodeBagian',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // Generate kode tukar
+            $kodeTukar = TukarHariKerja::generateKodeTukar();
+
+            // Create header
+            $tukarHariKerja = TukarHariKerja::create([
+                'vcKodeTukar' => $kodeTukar,
+                'dtTanggalLibur' => $request->dtTanggalLibur,
+                'dtTanggalKerja' => $request->dtTanggalKerja,
+                'vcKeterangan' => $request->vcKeterangan,
+                'vcTipeTukar' => $request->vcTipeTukar,
+                'vcScope' => $request->vcScope,
+                'vcKodeDivisi' => $request->vcKodeDivisi,
+                'vcKodeDept' => $request->vcKodeDept,
+                'vcKodeBagian' => $request->vcKodeBagian,
+                'dtTanggalMulai' => $request->dtTanggalMulai ?? $request->dtTanggalLibur,
+                'dtTanggalSelesai' => $request->dtTanggalSelesai ?? $request->dtTanggalKerja,
+                'vcStatus' => '1',
+                'vcCreatedBy' => Auth::user()->name ?? 'System',
+                'dtCreatedAt' => Carbon::now(),
+            ]);
+
+            // Get karyawan list berdasarkan scope
+            $karyawanList = $this->getKaryawanByScope($request);
+
+            if ($karyawanList->isEmpty()) {
+                DB::rollBack();
+                return redirect()->back()
+                    ->withInput()
+                    ->with('error', 'Tidak ada karyawan yang ditemukan berdasarkan filter yang dipilih.');
+            }
+
+            // Create detail
+            foreach ($karyawanList as $karyawan) {
+                TukarHariKerjaDetail::create([
+                    'vcKodeTukar' => $kodeTukar,
+                    'vcNik' => $karyawan->Nik,
+                    'dtTanggalLibur' => $request->dtTanggalLibur,
+                    'dtTanggalKerja' => $request->dtTanggalKerja,
+                    'vcStatus' => '1',
+                    'dtCreatedAt' => Carbon::now(),
+                ]);
+            }
+
+            DB::commit();
+
+            return redirect()->route('tukar-hari-kerja.index')
+                ->with('success', 'Tukar hari kerja berhasil dibuat. Total ' . count($karyawanList) . ' karyawan terkena.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Gagal membuat tukar hari kerja: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Display the specified resource.
+     */
+    public function show(string $tanggal_libur, string $nik)
+    {
+        $tukarHariKerja = TukarHariKerja::where('tanggal_libur', $tanggal_libur)
+            ->where('nik', $nik)
+            ->with(['divisi', 'karyawan'])
+            ->firstOrFail();
+        return view('absen.tukar-hari-kerja.show', compact('tukarHariKerja'));
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     */
+    public function edit(string $tanggal_libur, string $nik)
+    {
+        $tukarHariKerja = TukarHariKerja::where('tanggal_libur', $tanggal_libur)
+            ->where('nik', $nik)
+            ->with('karyawan')
+            ->firstOrFail();
+        $divisis = Divisi::orderBy('vcKodeDivisi')->get();
+        $departemens = Departemen::orderBy('vcKodeDept')->get();
+        $bagians = Bagian::orderBy('vcKodeBagian')->get();
+
+        return view('absen.tukar-hari-kerja.edit', compact('tukarHariKerja', 'divisis', 'departemens', 'bagians'));
+    }
+
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update(Request $request, string $id)
+    {
+        $tukarHariKerja = TukarHariKerja::findOrFail($id);
+
+        $request->validate([
+            'dtTanggalLibur' => 'required|date',
+            'dtTanggalKerja' => 'required|date|different:dtTanggalLibur',
+            'vcTipeTukar' => 'required|in:LIBUR_KE_KERJA,KERJA_KE_LIBUR',
+            'vcScope' => 'required|in:PERORANGAN,GROUP,SEMUA_BU',
+            'vcKeterangan' => 'nullable|string|max:255',
+            'vcStatus' => 'required|in:0,1',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $tukarHariKerja->update([
+                'dtTanggalLibur' => $request->dtTanggalLibur,
+                'dtTanggalKerja' => $request->dtTanggalKerja,
+                'vcKeterangan' => $request->vcKeterangan,
+                'vcTipeTukar' => $request->vcTipeTukar,
+                'vcScope' => $request->vcScope,
+                'vcStatus' => $request->vcStatus,
+                'vcUpdatedBy' => Auth::user()->name ?? 'System',
+                'dtUpdatedAt' => Carbon::now(),
+            ]);
+
+            // Update detail status
+            if ($request->has('vcStatus')) {
+                TukarHariKerjaDetail::where('vcKodeTukar', $tukarHariKerja->vcKodeTukar)
+                    ->update(['vcStatus' => $request->vcStatus, 'dtUpdatedAt' => Carbon::now()]);
+            }
+
+            DB::commit();
+
+            return redirect()->route('tukar-hari-kerja.index')
+                ->with('success', 'Tukar hari kerja berhasil diupdate.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Gagal mengupdate tukar hari kerja: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy(string $tanggal_libur, string $nik)
+    {
+        $tukarHariKerja = TukarHariKerja::where('tanggal_libur', $tanggal_libur)
+            ->where('nik', $nik)
+            ->firstOrFail();
+
+        DB::beginTransaction();
+        try {
+            // Delete detail (jika ada)
+            TukarHariKerjaDetail::where('dtTanggalLibur', $tanggal_libur)
+                ->where('vcNik', $nik)
+                ->delete();
+            
+            // Delete header
+            $tukarHariKerja->delete();
+
+            DB::commit();
+
+            return redirect()->route('tukar-hari-kerja.index')
+                ->with('success', 'Tukar hari kerja berhasil dihapus.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()
+                ->with('error', 'Gagal menghapus tukar hari kerja: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get karyawan berdasarkan scope
+     */
+    private function getKaryawanByScope(Request $request)
+    {
+        $query = Karyawan::where('vcAktif', '1')
+            ->whereNull('Tgl_Berhenti');
+
+        if ($request->vcScope === 'PERORANGAN') {
+            $karyawanIds = $request->karyawan_ids;
+            if (is_string($karyawanIds)) {
+                $karyawanIds = json_decode($karyawanIds, true);
+            }
+            if (is_array($karyawanIds) && count($karyawanIds) > 0) {
+                $query->whereIn('Nik', $karyawanIds);
+            } else {
+                return collect([]); // Return empty collection jika tidak ada karyawan yang dipilih
+            }
+        } elseif ($request->vcScope === 'GROUP') {
+            if ($request->vcKodeDivisi) {
+                $query->where('Divisi', $request->vcKodeDivisi);
+            }
+            if ($request->vcKodeDept) {
+                $query->where('dept', $request->vcKodeDept);
+            }
+            if ($request->vcKodeBagian) {
+                $query->where('vcKodeBagian', $request->vcKodeBagian);
+            }
+        } elseif ($request->vcScope === 'SEMUA_BU') {
+            if ($request->vcKodeDivisi) {
+                $query->where('Divisi', $request->vcKodeDivisi);
+            }
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * API: Get karyawan berdasarkan filter
+     */
+    public function getKaryawan(Request $request)
+    {
+        $request->validate([
+            'divisi' => 'nullable|string',
+            'departemen' => 'nullable|string',
+            'bagian' => 'nullable|string',
+            'search' => 'nullable|string',
+        ]);
+
+        $query = Karyawan::where('vcAktif', '1')
+            ->whereNull('Tgl_Berhenti');
+
+        if ($request->filled('divisi')) {
+            $query->where('Divisi', $request->divisi);
+        }
+
+        if ($request->filled('departemen')) {
+            $query->where('dept', $request->departemen);
+        }
+
+        if ($request->filled('bagian')) {
+            $query->where('vcKodeBagian', $request->bagian);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('Nik', 'like', '%' . $search . '%')
+                  ->orWhere('Nama', 'like', '%' . $search . '%');
+            });
+        }
+
+        $karyawans = $query->orderBy('Nama')
+            ->get(['Nik', 'Nama', 'Divisi', 'dept', 'vcKodeBagian']);
+
+        return response()->json([
+            'success' => true,
+            'karyawans' => $karyawans
+        ]);
+    }
+
+    /**
+     * Preview sebelum simpan
+     */
+    public function preview(Request $request)
+    {
+        $request->validate([
+            'dtTanggalLibur' => 'required|date',
+            'dtTanggalKerja' => 'required|date|different:dtTanggalLibur',
+            'vcTipeTukar' => 'required|in:LIBUR_KE_KERJA,KERJA_KE_LIBUR',
+            'vcScope' => 'required|in:PERORANGAN,GROUP,SEMUA_BU',
+        ]);
+
+        $karyawanList = $this->getKaryawanByScope($request);
+
+        return response()->json([
+            'success' => true,
+            'total_karyawan' => $karyawanList->count(),
+            'karyawans' => $karyawanList->map(function ($k) {
+                return [
+                    'nik' => $k->Nik,
+                    'nama' => $k->Nama,
+                    'divisi' => $k->divisi->vcNamaDivisi ?? '-',
+                ];
+            }),
+        ]);
+    }
+}

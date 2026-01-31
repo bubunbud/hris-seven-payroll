@@ -1,0 +1,280 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\TidakMasuk;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
+
+class TarikDataTidakMasukController extends Controller
+{
+    /**
+     * Menampilkan form tarik data tidak masuk
+     */
+    public function index()
+    {
+        return view('tarik-data-tidak-masuk.index');
+    }
+
+    /**
+     * Proses tarik data tidak masuk dari server remote
+     */
+    public function pullData(Request $request)
+    {
+        $request->validate([
+            'dari_tanggal' => 'required|date',
+            'sampai_tanggal' => 'required|date|after_or_equal:dari_tanggal',
+            'server_host' => 'required|string',
+            'server_database' => 'required|string',
+            'server_table' => 'required|string',
+            'server_user' => 'required|string',
+            'server_password' => 'required|string',
+            'server_port' => 'nullable|integer|min:1|max:65535',
+            'fields' => 'required|array|min:1',
+            'fields.*' => 'required|string',
+        ], [
+            'dari_tanggal.required' => 'Tanggal mulai harus diisi',
+            'sampai_tanggal.required' => 'Tanggal akhir harus diisi',
+            'sampai_tanggal.after_or_equal' => 'Tanggal akhir harus lebih besar atau sama dengan tanggal mulai',
+            'server_host.required' => 'Host server harus diisi',
+            'server_database.required' => 'Nama database harus diisi',
+            'server_table.required' => 'Nama tabel harus diisi',
+            'server_user.required' => 'Username harus diisi',
+            'server_password.required' => 'Password harus diisi',
+            'fields.required' => 'Minimal pilih 1 field',
+            'fields.min' => 'Minimal pilih 1 field',
+        ]);
+
+        $dariTanggal = $request->dari_tanggal;
+        $sampaiTanggal = $request->sampai_tanggal;
+        $fields = $request->fields;
+
+        try {
+            // Konfigurasi database remote dari form
+            $remoteConfig = [
+                'host' => $request->server_host,
+                'database' => $request->server_database,
+                'username' => $request->server_user,
+                'password' => $request->server_password,
+                'port' => $request->server_port ?? 3306,
+            ];
+
+            // Koneksi ke database remote
+            $remoteConnection = $this->connectToRemoteDatabase($remoteConfig);
+
+            if (!$remoteConnection) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal terhubung ke server remote. Pastikan server dapat diakses dan kredensial benar.'
+                ], 500);
+            }
+
+            // Query data dari server remote - ambil field yang dipilih
+            // Filter berdasarkan dtTanggalMulai (bukan dtTanggal)
+            $query = DB::connection('remote_mysql')
+                ->table($request->server_table)
+                ->whereBetween('dtTanggalMulai', [$dariTanggal, $sampaiTanggal])
+                ->select($fields);
+
+            $remoteData = $query->get();
+
+            if ($remoteData->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada data tidak masuk ditemukan untuk periode yang dipilih.'
+                ], 404);
+            }
+
+            // Proses insert/update data ke database lokal
+            $inserted = 0;
+            $updated = 0;
+            $skipped = 0;
+            $errors = [];
+
+            DB::beginTransaction();
+
+            foreach ($remoteData as $remoteRow) {
+                try {
+                    // Cek apakah data sudah ada (berdasarkan composite key: vcNik + vcKodeAbsen + dtTanggalMulai + dtTanggalSelesai)
+                    $vcNik = $remoteRow->vcNik ?? null;
+                    $vcKodeAbsen = $remoteRow->vcKodeAbsen ?? null;
+                    $dtTanggalMulai = $remoteRow->dtTanggalMulai ?? null;
+                    $dtTanggalSelesai = $remoteRow->dtTanggalSelesai ?? null;
+
+                    if (!$vcNik || !$vcKodeAbsen || !$dtTanggalMulai || !$dtTanggalSelesai) {
+                        $errors[] = [
+                            'nik' => $vcNik ?? 'N/A',
+                            'kode' => $vcKodeAbsen ?? 'N/A',
+                            'tanggal_mulai' => $dtTanggalMulai ?? 'N/A',
+                            'error' => 'Field wajib (vcNik, vcKodeAbsen, dtTanggalMulai, dtTanggalSelesai) tidak lengkap'
+                        ];
+                        continue;
+                    }
+
+                    $existing = DB::table('t_tidak_masuk')
+                        ->where('vcNik', $vcNik)
+                        ->where('vcKodeAbsen', $vcKodeAbsen)
+                        ->where('dtTanggalMulai', $dtTanggalMulai)
+                        ->where('dtTanggalSelesai', $dtTanggalSelesai)
+                        ->first();
+
+                    // Siapkan data untuk insert/update
+                    $data = [];
+
+                    // Tambahkan field yang dipilih dari remote data
+                    foreach ($fields as $field) {
+                        $data[$field] = $remoteRow->$field ?? null;
+                    }
+
+                    if ($existing) {
+                        // Data sudah ada, lakukan update/sinkronisasi untuk SEMUA kolom yang dipilih dari remote
+                        // Logika: Update semua field yang dipilih user dari remote, sinkronkan dengan data sumber
+                        $updateData = ['dtChange' => Carbon::now()];
+
+                        // Update SEMUA field yang dipilih dari remote (sinkronisasi lengkap)
+                        // Catatan: Composite key (vcNik, vcKodeAbsen, dtTanggalMulai, dtTanggalSelesai) tidak bisa diubah
+                        // karena itu adalah primary key, jadi skip field tersebut
+                        foreach ($fields as $field) {
+                            // Skip composite key karena tidak bisa diubah (primary key)
+                            if (in_array($field, ['vcNik', 'vcKodeAbsen', 'dtTanggalMulai', 'dtTanggalSelesai'])) {
+                                continue;
+                            }
+                            
+                            // Sinkronkan semua field yang dipilih dari remote
+                            // Update dengan nilai dari remote (termasuk null jika null di remote)
+                            // Ini memastikan data lokal selalu sinkron dengan data remote untuk field yang dipilih
+                            $updateData[$field] = $data[$field] ?? null;
+                        }
+
+                        // Update data ke database (selalu update untuk sinkronisasi, meskipun nilai sama)
+                        // Ini memastikan dtChange selalu ter-update dan data selalu sinkron
+                        DB::table('t_tidak_masuk')
+                            ->where('vcNik', $vcNik)
+                            ->where('vcKodeAbsen', $vcKodeAbsen)
+                            ->where('dtTanggalMulai', $dtTanggalMulai)
+                            ->where('dtTanggalSelesai', $dtTanggalSelesai)
+                            ->update($updateData);
+                        $updated++;
+                    } else {
+                        // Insert data baru
+                        $data['dtCreate'] = Carbon::now();
+                        $data['dtChange'] = Carbon::now();
+
+                        DB::table('t_tidak_masuk')->insert($data);
+                        $inserted++;
+                    }
+                } catch (\Exception $e) {
+                    $errors[] = [
+                        'nik' => $remoteRow->vcNik ?? 'N/A',
+                        'kode' => $remoteRow->vcKodeAbsen ?? 'N/A',
+                        'tanggal_mulai' => $remoteRow->dtTanggalMulai ?? 'N/A',
+                        'tanggal_selesai' => $remoteRow->dtTanggalSelesai ?? 'N/A',
+                        'error' => $e->getMessage()
+                    ];
+                    Log::error('Error inserting tidak masuk data', [
+                        'nik' => $remoteRow->vcNik ?? null,
+                        'kode' => $remoteRow->vcKodeAbsen ?? null,
+                        'tanggal_mulai' => $remoteRow->dtTanggalMulai ?? null,
+                        'tanggal_selesai' => $remoteRow->dtTanggalSelesai ?? null,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            // Disconnect dari remote database
+            DB::purge('remote_mysql');
+
+            $message = "Data berhasil ditarik! Insert: {$inserted}, Update: {$updated}, Skip: {$skipped}";
+            if (!empty($errors)) {
+                $message .= " (Error: " . count($errors) . " record)";
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'inserted' => $inserted,
+                    'updated' => $updated,
+                    'skipped' => $skipped,
+                    'total' => $remoteData->count(),
+                    'errors' => count($errors),
+                    'error_details' => $errors
+                ]
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error pulling tidak masuk data', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Membuat koneksi ke database remote
+     */
+    private function connectToRemoteDatabase($config)
+    {
+        try {
+            // Register connection baru untuk remote database
+            config([
+                'database.connections.remote_mysql' => [
+                    'driver' => 'mysql',
+                    'host' => $config['host'],
+                    'port' => $config['port'],
+                    'database' => $config['database'],
+                    'username' => $config['username'],
+                    'password' => $config['password'],
+                    'charset' => 'utf8mb4',
+                    'collation' => 'utf8mb4_unicode_ci',
+                    'prefix' => '',
+                    'strict' => true,
+                    'engine' => null,
+                ]
+            ]);
+
+            // Test connection
+            DB::connection('remote_mysql')->getPdo();
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Failed to connect to remote database', [
+                'host' => $config['host'],
+                'database' => $config['database'],
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

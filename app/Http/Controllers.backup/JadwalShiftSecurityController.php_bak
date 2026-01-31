@@ -1,0 +1,324 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\JadwalShiftSecurity;
+use App\Models\Karyawan;
+use App\Models\ShiftSecurity;
+use App\Models\OverrideJadwalSecurity;
+use App\Models\HariLibur;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
+
+class JadwalShiftSecurityController extends Controller
+{
+    /**
+     * Display form input jadwal shift security
+     */
+    public function index(Request $request)
+    {
+        $bulan = $request->get('bulan', date('m'));
+        $tahun = $request->get('tahun', date('Y'));
+        $filterNama = $request->get('filter_nama', '');
+
+        // Get all security employees dengan filter
+        $satpamsQuery = Karyawan::where('Group_pegawai', 'Security')
+            ->where('vcAktif', '1');
+
+        // Apply filter NIK/Nama jika ada
+        if (!empty($filterNama)) {
+            $satpamsQuery->where(function ($q) use ($filterNama) {
+                $q->where('Nik', 'LIKE', '%' . $filterNama . '%')
+                    ->orWhere('Nama', 'LIKE', '%' . $filterNama . '%');
+            });
+        }
+
+        $satpams = $satpamsQuery->orderBy('Nama')
+            ->get(['Nik', 'Nama']);
+
+        if ($satpams->isEmpty()) {
+            return view('jadwal-shift-security.index', [
+                'satpams' => collect(),
+                'jadwal' => [],
+                'tanggalList' => [],
+                'bulan' => $bulan,
+                'tahun' => $tahun,
+                'tanggalAwal' => Carbon::create($tahun, $bulan, 1),
+                'tanggalAkhir' => Carbon::create($tahun, $bulan, 1)->endOfMonth(),
+                'filterNama' => $filterNama,
+            ])->with('warning', !empty($filterNama)
+                ? 'Tidak ada data satpam yang sesuai dengan filter "' . $filterNama . '"'
+                : 'Tidak ada data satpam dengan Group_pegawai = Security');
+        }
+
+        // Get jadwal untuk periode ini
+        $tanggalAwal = Carbon::create($tahun, $bulan, 1);
+        $tanggalAkhir = $tanggalAwal->copy()->endOfMonth();
+
+        // Get jadwal untuk periode ini (bisa kosong jika belum ada data)
+        $jadwalRaw = JadwalShiftSecurity::whereBetween('dtTanggal', [$tanggalAwal->format('Y-m-d'), $tanggalAkhir->format('Y-m-d')])
+            ->get();
+
+        // Group by NIK and Tanggal, collect shifts
+        $jadwal = [];
+        foreach ($jadwalRaw as $j) {
+            $nik = $j->vcNik;
+            $tanggal = $j->dtTanggal instanceof Carbon
+                ? $j->dtTanggal->format('Y-m-d')
+                : (is_string($j->dtTanggal) ? $j->dtTanggal : Carbon::parse($j->dtTanggal)->format('Y-m-d'));
+            if (!isset($jadwal[$nik])) {
+                $jadwal[$nik] = [];
+            }
+            if (!isset($jadwal[$nik][$tanggal])) {
+                $jadwal[$nik][$tanggal] = collect();
+            }
+            $jadwal[$nik][$tanggal]->push($j);
+        }
+
+        // Get hari libur untuk highlight
+        $hariLibur = HariLibur::whereBetween('dtTanggal', [$tanggalAwal->format('Y-m-d'), $tanggalAkhir->format('Y-m-d')])
+            ->pluck('dtTanggal')
+            ->map(function ($tanggal) {
+                return $tanggal instanceof Carbon ? $tanggal->format('Y-m-d') : Carbon::parse($tanggal)->format('Y-m-d');
+            })
+            ->toArray();
+
+        // Generate array tanggal dalam bulan
+        $tanggalList = [];
+        $current = $tanggalAwal->copy();
+        while ($current->lte($tanggalAkhir)) {
+            $tanggalList[] = [
+                'tanggal' => $current->format('Y-m-d'),
+                'hari' => $current->format('d'),
+                'nama_hari' => $current->format('D'),
+                'is_weekend' => $current->isWeekend(),
+                'is_libur' => in_array($current->format('Y-m-d'), $hariLibur),
+            ];
+            $current->addDay();
+        }
+
+        return view('jadwal-shift-security.index', compact(
+            'satpams',
+            'jadwal',
+            'tanggalList',
+            'bulan',
+            'tahun',
+            'tanggalAwal',
+            'tanggalAkhir',
+            'filterNama'
+        ));
+    }
+
+    /**
+     * Store jadwal shift (bulk)
+     */
+    public function store(Request $request)
+    {
+        $request->validate([
+            'bulan' => 'required|integer|min:1|max:12',
+            'tahun' => 'required|integer|min:2000|max:2100',
+            'jadwal' => 'required|string', // JSON string
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $bulan = $request->bulan;
+            $tahun = $request->tahun;
+            $tanggalAwal = Carbon::create($tahun, $bulan, 1);
+            $tanggalAkhir = $tanggalAwal->copy()->endOfMonth();
+
+            // Hapus jadwal lama untuk periode ini (jika ada)
+            JadwalShiftSecurity::whereBetween('dtTanggal', [$tanggalAwal->format('Y-m-d'), $tanggalAkhir->format('Y-m-d')])
+                ->delete();
+
+            // Insert jadwal baru
+            $now = Carbon::now();
+            $dataInsert = [];
+
+            // Parse JSON jadwal dari request
+            $jadwalArray = json_decode($request->jadwal, true);
+
+            if (!is_array($jadwalArray)) {
+                throw new \Exception('Format jadwal tidak valid');
+            }
+
+            foreach ($jadwalArray as $item) {
+                if (!isset($item['vcNik']) || !isset($item['dtTanggal'])) {
+                    continue;
+                }
+
+                // Handle "OFF" - simpan dengan intShift = NULL dan vcKeterangan = 'OFF'
+                if (isset($item['isOff']) && $item['isOff'] === true) {
+                    $dataInsert[] = [
+                        'vcNik' => $item['vcNik'],
+                        'dtTanggal' => $item['dtTanggal'],
+                        'intShift' => null,
+                        'vcKeterangan' => 'OFF',
+                        'isOverride' => false,
+                        'vcOverrideBy' => null,
+                        'dtOverrideAt' => null,
+                        'dtCreate' => $now,
+                        'dtChange' => $now,
+                    ];
+                    continue;
+                }
+
+                // Handle shift normal (1, 2, 3)
+                if (!isset($item['intShift'])) {
+                    continue;
+                }
+
+                $shifts = is_array($item['intShift']) ? $item['intShift'] : [$item['intShift']];
+                foreach ($shifts as $shift) {
+                    $shiftInt = (int)$shift;
+                    if ($shiftInt >= 1 && $shiftInt <= 3) {
+                        $dataInsert[] = [
+                            'vcNik' => $item['vcNik'],
+                            'dtTanggal' => $item['dtTanggal'],
+                            'intShift' => $shiftInt,
+                            'vcKeterangan' => null,
+                            'isOverride' => false,
+                            'vcOverrideBy' => null,
+                            'dtOverrideAt' => null,
+                            'dtCreate' => $now,
+                            'dtChange' => $now,
+                        ];
+                    }
+                }
+            }
+
+            if (!empty($dataInsert)) {
+                DB::table('t_jadwal_shift_security')->insert($dataInsert);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Jadwal shift berhasil disimpan'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error storing jadwal shift security: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Override jadwal untuk kasus urgent
+     */
+    public function override(Request $request)
+    {
+        $request->validate([
+            'vcNik' => 'required|string|exists:m_karyawan,Nik',
+            'dtTanggal' => 'required|date',
+            'intShiftLama' => 'nullable|integer|in:1,2,3',
+            'intShiftBaru' => 'required|integer|in:1,2,3',
+            'vcAlasan' => 'required|string|min:10|max:500',
+        ], [
+            'vcNik.exists' => 'NIK tidak ditemukan di database',
+            'intShiftBaru.required' => 'Shift Baru harus dipilih',
+            'intShiftBaru.in' => 'Shift Baru harus 1, 2, atau 3',
+            'vcAlasan.required' => 'Alasan override wajib diisi',
+            'vcAlasan.min' => 'Alasan override minimal 10 karakter',
+            'vcAlasan.max' => 'Alasan override maksimal 500 karakter',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $user = auth()->user();
+            $now = Carbon::now();
+
+            // Hapus jadwal lama jika ada (bisa multiple jika sebelumnya ada multiple shift)
+            if ($request->intShiftLama) {
+                JadwalShiftSecurity::where('vcNik', $request->vcNik)
+                    ->where('dtTanggal', $request->dtTanggal)
+                    ->where('intShift', $request->intShiftLama)
+                    ->delete();
+            } else {
+                // Jika intShiftLama kosong, berarti menambah shift baru (tidak hapus yang lama)
+                // Tapi jika shift baru sudah ada, hapus dulu untuk menghindari duplikasi
+                JadwalShiftSecurity::where('vcNik', $request->vcNik)
+                    ->where('dtTanggal', $request->dtTanggal)
+                    ->where('intShift', $request->intShiftBaru)
+                    ->delete();
+            }
+
+            // Insert jadwal baru dengan flag override
+            JadwalShiftSecurity::create([
+                'vcNik' => $request->vcNik,
+                'dtTanggal' => $request->dtTanggal,
+                'intShift' => $request->intShiftBaru,
+                'vcKeterangan' => 'Override: ' . $request->vcAlasan,
+                'isOverride' => true,
+                'vcOverrideBy' => $user->name ?? $user->email ?? 'System',
+                'dtOverrideAt' => $now,
+                'dtCreate' => $now,
+                'dtChange' => $now,
+            ]);
+
+            // Simpan log override
+            OverrideJadwalSecurity::create([
+                'vcNik' => $request->vcNik,
+                'dtTanggal' => $request->dtTanggal,
+                'intShiftLama' => $request->intShiftLama,
+                'intShiftBaru' => $request->intShiftBaru,
+                'vcAlasan' => $request->vcAlasan,
+                'vcOverrideBy' => $user->name ?? $user->email ?? 'System',
+                'dtOverrideAt' => $now,
+                'dtCreate' => $now,
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Jadwal berhasil di-override'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error overriding jadwal shift security: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get jadwal by periode (API)
+     */
+    public function getJadwalByPeriode(Request $request)
+    {
+        $request->validate([
+            'bulan' => 'required|integer|min:1|max:12',
+            'tahun' => 'required|integer|min:2000|max:2100',
+        ]);
+
+        $tanggalAwal = Carbon::create($request->tahun, $request->bulan, 1);
+        $tanggalAkhir = $tanggalAwal->copy()->endOfMonth();
+
+        $jadwal = JadwalShiftSecurity::whereBetween('dtTanggal', [$tanggalAwal->format('Y-m-d'), $tanggalAkhir->format('Y-m-d')])
+            ->with('karyawan', 'shiftSecurity')
+            ->get()
+            ->groupBy(['vcNik', 'dtTanggal']);
+
+        return response()->json([
+            'success' => true,
+            'jadwal' => $jadwal
+        ]);
+    }
+}

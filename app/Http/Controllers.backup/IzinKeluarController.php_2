@@ -1,0 +1,127 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Izin;
+use App\Models\JenisIzin;
+use Illuminate\Http\Request;
+use Carbon\Carbon;
+
+class IzinKeluarController extends Controller
+{
+    public function index(Request $request)
+    {
+        $startDate = $request->get('dari_tanggal', Carbon::now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->get('sampai_tanggal', Carbon::now()->endOfMonth()->format('Y-m-d'));
+        $nik = $request->get('nik');
+
+        $query = Izin::with(['karyawan', 'jenisIzin'])
+            ->whereBetween('dtTanggal', [$startDate, $endDate])
+            ->orderBy('dtTanggal', 'desc')
+            ->orderBy('dtDari');
+
+        if ($nik) {
+            $query->where('vcNik', 'like', '%' . $nik . '%');
+        }
+
+        $records = $query->paginate(25);
+        $jenisIzins = JenisIzin::orderBy('vcKeterangan')->get();
+
+        return view('absen.izin_keluar.index', compact('records', 'jenisIzins', 'startDate', 'endDate', 'nik'));
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'dtTanggal' => 'required|date',
+            'vcNik' => 'required|string|max:10',
+            'vcKodeIzin' => 'required|string|max:5|exists:m_jenis_izin,vcKodeIzin',
+            'vcTipeIzin' => 'nullable|string|max:20|in:Masuk Siang,Izin Biasa,Pulang Cepat',
+            'dtDari' => 'required|date_format:H:i',
+            'dtSampai' => 'required|date_format:H:i',
+            'vcKeterangan' => 'nullable|string|max:35',
+        ]);
+
+        // Generate vcCounter unik (panjang 9). Coba beberapa kali untuk menghindari bentrok.
+        $vcCounter = null;
+        for ($i = 0; $i < 5; $i++) {
+            $candidate = substr(
+                preg_replace(
+                    '/[^0-9]/',
+                    '',
+                    Carbon::now()->format('mdY') . mt_rand(100, 999)
+                ),
+                0,
+                9
+            );
+            if (!Izin::where('vcCounter', $candidate)->exists()) {
+                $vcCounter = $candidate;
+                break;
+            }
+            // Delay ringan untuk mengurangi kemungkinan tabrakan pada waktu yang sama
+            usleep(50000); // 50ms
+        }
+        if (!$vcCounter) {
+            return response()->json(['success' => false, 'message' => 'Gagal membangkitkan kode counter. Coba lagi.'], 422);
+        }
+
+        Izin::create([
+            'dtTanggal' => $request->dtTanggal,
+            'vcNik' => $request->vcNik,
+            'vcKodeIzin' => $request->vcKodeIzin,
+            'vcTipeIzin' => $request->vcTipeIzin,
+            'dtDari' => $request->dtDari . ':00',
+            'dtSampai' => $request->dtSampai . ':00',
+            'vcKeterangan' => $request->vcKeterangan,
+            'vcCounter' => $vcCounter,
+            'dtCreate' => Carbon::now(),
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Izin Keluar berhasil ditambahkan', 'vcCounter' => $vcCounter]);
+    }
+
+    public function show(string $id)
+    {
+        $record = Izin::with(['karyawan', 'jenisIzin'])->findOrFail($id);
+        // Pastikan tanggal dan jam dalam format yang bisa langsung dipakai input HTML
+        $payload = $record->toArray();
+        $payload['dtTanggal'] = $record->dtTanggal ? $record->dtTanggal->format('Y-m-d') : null;
+        $payload['dtDari'] = $record->dtDari ? substr((string) $record->dtDari, 0, 5) : null;
+        $payload['dtSampai'] = $record->dtSampai ? substr((string) $record->dtSampai, 0, 5) : null;
+        return response()->json(['success' => true, 'record' => $payload]);
+    }
+
+    public function update(Request $request, string $id)
+    {
+        $request->validate([
+            'dtTanggal' => 'required|date',
+            'vcNik' => 'required|string|max:10',
+            'vcKodeIzin' => 'required|string|max:5|exists:m_jenis_izin,vcKodeIzin',
+            'vcTipeIzin' => 'nullable|string|max:20|in:Masuk Siang,Izin Biasa,Pulang Cepat',
+            'dtDari' => 'required|date_format:H:i',
+            'dtSampai' => 'required|date_format:H:i',
+            'vcKeterangan' => 'nullable|string|max:35',
+        ]);
+
+        $record = Izin::findOrFail($id);
+        $record->update([
+            'dtTanggal' => $request->dtTanggal,
+            'vcNik' => $request->vcNik,
+            'vcKodeIzin' => $request->vcKodeIzin,
+            'vcTipeIzin' => $request->vcTipeIzin,
+            'dtDari' => $request->dtDari . ':00',
+            'dtSampai' => $request->dtSampai . ':00',
+            'vcKeterangan' => $request->vcKeterangan,
+            'dtChange' => Carbon::now(),
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Izin Keluar berhasil diperbarui']);
+    }
+
+    public function destroy(string $id)
+    {
+        $record = Izin::findOrFail($id);
+        $record->delete();
+        return response()->json(['success' => true, 'message' => 'Izin Keluar berhasil dihapus']);
+    }
+}

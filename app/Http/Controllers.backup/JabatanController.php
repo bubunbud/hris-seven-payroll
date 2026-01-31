@@ -1,0 +1,240 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Jabatan;
+use App\Models\Divisi;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class JabatanController extends Controller
+{
+    public function index(Request $request)
+    {
+        // Mapping divisi ke prefix untuk filter
+        $prefixMapping = [
+            'RMA' => 'JRMA',
+            'SIA-CPD' => 'JSIA',
+            'SIA-P11' => 'JSIA',
+            'SIA-P112' => 'JSIA',
+            'SIA-P12' => 'JSIA',
+            'SMU' => 'JSMU',
+        ];
+
+        // Get filter divisi dari request
+        $filterDivisi = $request->get('filter_divisi', '');
+        // Get search nama jabatan dari request
+        $searchNama = $request->get('search_nama', '');
+
+        // Query jabatan
+        $query = Jabatan::query();
+
+        // Apply filter berdasarkan divisi
+        if ($filterDivisi && isset($prefixMapping[$filterDivisi])) {
+            $prefix = $prefixMapping[$filterDivisi];
+            $query->where('vcKodeJabatan', 'like', $prefix . '%');
+        }
+
+        // Filter berdasarkan nama jabatan (LIKE)
+        if (!empty($searchNama)) {
+            $query->where('vcNamaJabatan', 'like', '%' . $searchNama . '%');
+        }
+
+        $jabatans = $query->orderBy('vcKodeJabatan')->get();
+        // Data nama jabatan untuk autocomplete (semua, tidak terfilter)
+        $jabatanNames = Jabatan::orderBy('vcNamaJabatan')
+            ->pluck('vcNamaJabatan')
+            ->filter()
+            ->values();
+        
+        // Load divisi untuk dropdown (hanya yang relevan: RMA, SIA-CPD, SIA-P11, SIA-P112, SIA-P12, SMU)
+        $divisis = Divisi::whereIn('vcKodeDivisi', ['RMA', 'SIA-CPD', 'SIA-P11', 'SIA-P112', 'SIA-P12', 'SMU'])
+            ->orderBy('vcKodeDivisi')
+            ->get(['vcKodeDivisi', 'vcNamaDivisi']);
+        
+        return view('master.jabatan.index', compact('jabatans', 'divisis', 'filterDivisi', 'searchNama', 'jabatanNames'));
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'vcKodeJabatan' => 'required|string|max:7|unique:m_jabatan,vcKodeJabatan',
+            'vcNamaJabatan' => 'required|string|max:50',
+            'vcGrade' => 'nullable|string|max:25|regex:/^[A-Za-z0-9\s\-_]+$/'
+        ], [
+            'vcKodeJabatan.required' => 'Kode Jabatan harus diisi',
+            'vcKodeJabatan.max' => 'Kode Jabatan maksimal 7 karakter',
+            'vcKodeJabatan.unique' => 'Kode Jabatan sudah digunakan',
+            'vcNamaJabatan.required' => 'Nama Jabatan harus diisi',
+            'vcNamaJabatan.max' => 'Nama Jabatan maksimal 50 karakter',
+            'vcGrade.max' => 'Grade maksimal 10 karakter',
+            'vcGrade.regex' => 'Grade hanya boleh berisi huruf, angka, spasi, tanda hubung, dan underscore'
+        ]);
+
+        try {
+            Jabatan::create([
+                'vcKodeJabatan' => strtoupper($request->vcKodeJabatan),
+                'vcNamaJabatan' => $request->vcNamaJabatan,
+                'vcGrade' => $request->vcGrade,
+                'dtCreate' => now(),
+                'dtChange' => now()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data jabatan berhasil disimpan'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function show(string $id)
+    {
+        $jabatan = Jabatan::findOrFail($id);
+        return response()->json([
+            'success' => true,
+            'jabatan' => $jabatan
+        ]);
+    }
+
+    public function update(Request $request, string $id)
+    {
+        $request->validate([
+            'vcKodeJabatan' => 'required|string|max:7|unique:m_jabatan,vcKodeJabatan,' . $id . ',vcKodeJabatan',
+            'vcNamaJabatan' => 'required|string|max:50',
+            'vcGrade' => 'nullable|string|max:25|regex:/^[A-Za-z0-9\s\-_]+$/'
+        ], [
+            'vcKodeJabatan.required' => 'Kode Jabatan harus diisi',
+            'vcKodeJabatan.max' => 'Kode Jabatan maksimal 7 karakter',
+            'vcKodeJabatan.unique' => 'Kode Jabatan sudah digunakan',
+            'vcNamaJabatan.required' => 'Nama Jabatan harus diisi',
+            'vcNamaJabatan.max' => 'Nama Jabatan maksimal 50 karakter',
+            'vcGrade.max' => 'Grade maksimal 25 karakter',
+            'vcGrade.regex' => 'Grade hanya boleh berisi huruf, angka, spasi, tanda hubung, dan underscore'
+        ]);
+
+        try {
+            $jabatan = Jabatan::findOrFail($id);
+            $jabatan->update([
+                'vcKodeJabatan' => strtoupper($request->vcKodeJabatan),
+                'vcNamaJabatan' => $request->vcNamaJabatan,
+                'vcGrade' => $request->vcGrade,
+                'dtChange' => now()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data jabatan berhasil diperbarui'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function destroy(string $id)
+    {
+        try {
+            $jabatan = Jabatan::findOrFail($id);
+
+            // Cek apakah jabatan digunakan di tabel karyawan
+            $usedInKaryawan = DB::table('m_karyawan')->where('vcJabatan', $id)->exists();
+
+            if ($usedInKaryawan) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Jabatan tidak dapat dihapus karena masih digunakan dalam data karyawan'
+                ], 400);
+            }
+
+            $jabatan->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data jabatan berhasil dihapus'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate kode jabatan otomatis berdasarkan divisi
+     */
+    public function generateKodeJabatan(Request $request)
+    {
+        $request->validate([
+            'divisi' => 'required|string|max:20',
+        ]);
+
+        $kodeDivisi = $request->divisi;
+
+        // Mapping divisi ke prefix
+        $prefixMapping = [
+            'RMA' => 'JRMA',
+            'SIA-CPD' => 'JSIA',
+            'SIA-P11' => 'JSIA',
+            'SIA-P112' => 'JSIA',
+            'SIA-P12' => 'JSIA',
+            'SMU' => 'JSMU',
+        ];
+
+        // Tentukan prefix berdasarkan divisi
+        $prefix = $prefixMapping[$kodeDivisi] ?? null;
+
+        if (!$prefix) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Divisi tidak valid untuk generate kode jabatan'
+            ], 422);
+        }
+
+        // Cari counter terakhir dari kode jabatan yang sudah ada dengan prefix yang sama
+        $lastKode = Jabatan::where('vcKodeJabatan', 'like', $prefix . '%')
+            ->orderBy('vcKodeJabatan', 'desc')
+            ->value('vcKodeJabatan');
+
+        // Extract counter dari kode terakhir
+        $counter = 1;
+        if ($lastKode) {
+            // Ambil bagian counter (setelah prefix)
+            $counterStr = substr($lastKode, strlen($prefix));
+            // Coba parse sebagai integer
+            $lastCounter = (int) $counterStr;
+            if ($lastCounter > 0) {
+                $counter = $lastCounter + 1;
+            }
+        }
+
+        // Format counter dengan 3 digit (001, 002, dst)
+        $counterFormatted = str_pad($counter, 3, '0', STR_PAD_LEFT);
+
+        // Generate kode baru
+        $newKode = $prefix . $counterFormatted;
+
+        // Pastikan kode belum ada (safety check)
+        $exists = Jabatan::where('vcKodeJabatan', $newKode)->exists();
+        if ($exists) {
+            // Jika sudah ada, cari counter berikutnya
+            $counter++;
+            $counterFormatted = str_pad($counter, 3, '0', STR_PAD_LEFT);
+            $newKode = $prefix . $counterFormatted;
+        }
+
+        return response()->json([
+            'success' => true,
+            'kodeJabatan' => $newKode,
+            'prefix' => $prefix,
+            'counter' => $counter
+        ]);
+    }
+}
