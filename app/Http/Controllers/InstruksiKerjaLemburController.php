@@ -11,10 +11,13 @@ use App\Models\Bagian;
 use App\Models\Absen;
 use App\Models\HariLibur;
 use App\Models\Jabatan;
+use App\Models\Gapok;
+use App\Services\LemburCalculationService;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class InstruksiKerjaLemburController extends Controller
 {
@@ -79,13 +82,14 @@ class InstruksiKerjaLemburController extends Controller
             'vcAlasanDasarLembur' => 'nullable|string|max:200',
             'details' => 'required|array|min:1',
             'details.*.vcNik' => 'required|string|max:10|exists:m_karyawan,Nik',
-            'details.*.dtJamMulaiLembur' => ['required', 'string', 'regex:/^([01][0-9]|2[0-3]):[0-5][0-9]$/'],
-            'details.*.dtJamSelesaiLembur' => ['required', 'string', 'regex:/^([01][0-9]|2[0-3]):[0-5][0-9]$/'],
+            'details.*.dtJamMulaiLembur' => ['required', 'string', 'date_format:H:i'],
+            'details.*.dtJamSelesaiLembur' => ['required', 'string', 'date_format:H:i'],
             'details.*.decDurasiLembur' => 'nullable|numeric|min:0',
             'details.*.intDurasiIstirahat' => 'nullable|integer|min:0',
             'details.*.vcDeskripsiLembur' => 'nullable|string|max:200',
             'details.*.vcPenanggungBebanLembur' => 'nullable|string|max:20',
             'details.*.vcPenanggungBebanLainnya' => 'nullable|string|max:100',
+            'freeRoleEnabled' => 'nullable|boolean',
         ], [
             'vcKodeDivisi.required' => 'Divisi harus diisi',
             'vcKodeDept.required' => 'Departemen harus diisi',
@@ -125,6 +129,7 @@ class InstruksiKerjaLemburController extends Controller
                 'vcDiajukanOleh' => substr($request->vcDiajukanOleh, 0, 100),
                 'vcJabatanPengaju' => $request->vcJabatanPengaju ? substr($request->vcJabatanPengaju, 0, 10) : null,
                 'vcKepalaDept' => $request->vcKepalaDept ? substr($request->vcKepalaDept, 0, 100) : null,
+                'is_free_role' => $request->boolean('freeRoleEnabled'),
                 'vcPenanggungBiaya' => null,
                 'vcPenanggungBiayaLainnya' => null,
                 'dtCreate' => Carbon::now(),
@@ -157,7 +162,50 @@ class InstruksiKerjaLemburController extends Controller
                     ? (strlen($detail['dtJamSelesaiLembur']) == 5 ? $detail['dtJamSelesaiLembur'] . ':00' : substr($detail['dtJamSelesaiLembur'], 0, 8))
                     : null;
 
-                LemburDetail::create([
+                // Hitung nominal lembur jika ada penanggung beban dan jam lembur
+                $decLemburExternal = null;
+                if (!empty($detail['vcPenanggungBebanLembur']) && $jamMulaiLembur && $jamSelesaiLembur) {
+                    try {
+                        // Ambil gapok karyawan
+                        $gapok = Gapok::find($karyawan->Gol);
+                        if ($gapok) {
+                            // Hitung gapok per bulan
+                            $gapokPerBulan = (float) ($gapok->upah ?? 0)
+                                + (float) ($gapok->tunj_keluarga ?? 0)
+                                + (float) ($gapok->tunj_masa_kerja ?? 0)
+                                + (float) ($gapok->tunj_jabatan1 ?? 0)
+                                + (float) ($gapok->tunj_jabatan2 ?? 0);
+
+                            // Ambil hari libur list untuk cek apakah hari libur
+                            $tanggalLembur = Carbon::parse($request->dtTanggalLembur)->format('Y-m-d');
+                            $hariLiburList = HariLibur::where('dtTanggal', $tanggalLembur)
+                                ->pluck('dtTanggal')
+                                ->map(function ($tanggal) {
+                                    return $tanggal instanceof Carbon ? $tanggal->format('Y-m-d') : Carbon::parse($tanggal)->format('Y-m-d');
+                                })
+                                ->toArray();
+
+                            // Hitung total jam lembur
+                            $durasiIstirahat = isset($detail['intDurasiIstirahat']) ? (int)$detail['intDurasiIstirahat'] : 0;
+                            $jamMulai = substr($jamMulaiLembur, 0, 5);
+                            $jamSelesai = substr($jamSelesaiLembur, 0, 5);
+                            $totalJamLembur = LemburCalculationService::calculateTotalJamLembur($jamMulai, $jamSelesai, $tanggalLembur, $durasiIstirahat);
+
+                            // Cek apakah hari libur
+                            $isHariLibur = LemburCalculationService::isHariLibur($tanggalLembur, $hariLiburList);
+
+                            // Hitung nominal lembur
+                            $lemburCalculation = LemburCalculationService::calculateLemburNominal($gapokPerBulan, $totalJamLembur, $isHariLibur);
+                            $decLemburExternal = $lemburCalculation['nominal'];
+                        }
+                    } catch (\Exception $e) {
+                        Log::warning('Error calculating lembur external for NIK ' . $detail['vcNik'] . ': ' . $e->getMessage());
+                        // Continue tanpa nominal jika ada error
+                    }
+                }
+
+                // Prepare data untuk create
+                $detailData = [
                     'vcCounterDetail' => $counterDetail,
                     'vcCounterHeader' => substr($counterHeader, 0, 12),
                     'vcNik' => substr($detail['vcNik'], 0, 8),
@@ -171,7 +219,14 @@ class InstruksiKerjaLemburController extends Controller
                     'vcPenanggungBebanLembur' => isset($detail['vcPenanggungBebanLembur']) ? substr($detail['vcPenanggungBebanLembur'], 0, 20) : null,
                     'vcPenanggungBebanLainnya' => isset($detail['vcPenanggungBebanLainnya']) ? substr($detail['vcPenanggungBebanLainnya'], 0, 100) : null,
                     'dtCreate' => Carbon::now(),
-                ]);
+                ];
+
+                // Tambahkan decLemburExternal hanya jika kolom ada di database
+                if (Schema::hasColumn('t_lembur_detail', 'decLemburExternal')) {
+                    $detailData['decLemburExternal'] = $decLemburExternal;
+                }
+
+                LemburDetail::create($detailData);
 
                 // Update atau create record di t_absen untuk realisasi lembur
                 $tanggalLembur = Carbon::parse($request->dtTanggalLembur)->format('Y-m-d');
@@ -236,16 +291,27 @@ class InstruksiKerjaLemburController extends Controller
 
     public function show(string $id)
     {
-        $header = LemburHeader::with(['departemen', 'bagian', 'details.karyawan.jabatan'])
+        $header = LemburHeader::with(['departemen', 'bagian', 'divisi', 'details.karyawan.jabatan', 'pengaju'])
             ->findOrFail($id);
 
         $details = [];
+        $computedFreeRole = (bool) ($header->is_free_role ?? false);
         foreach ($header->details as $detail) {
             $namaJabatan = '-';
             if ($detail->jabatan) {
                 $namaJabatan = $detail->jabatan->vcNamaJabatan;
             } elseif ($detail->karyawan && $detail->karyawan->jabatan) {
                 $namaJabatan = $detail->karyawan->jabatan->vcNamaJabatan;
+            }
+
+            if (!$computedFreeRole && $detail->karyawan) {
+                $detailDept = $detail->karyawan->dept ?? null;
+                $detailBagian = $detail->karyawan->vcKodeBagian ?? null;
+                if (($detailDept && $header->vcKodeDept && $detailDept !== $header->vcKodeDept) ||
+                    ($detailBagian && $header->vcKodeBagian && $detailBagian !== $header->vcKodeBagian)
+                ) {
+                    $computedFreeRole = true;
+                }
             }
 
             $details[] = [
@@ -260,6 +326,7 @@ class InstruksiKerjaLemburController extends Controller
                 'vcDeskripsiLembur' => $detail->vcDeskripsiLembur ?? '',
                 'vcPenanggungBebanLembur' => $detail->vcPenanggungBebanLembur ?? '',
                 'vcPenanggungBebanLainnya' => $detail->vcPenanggungBebanLainnya ?? '',
+                'decLemburExternal' => $detail->decLemburExternal ?? null,
             ];
         }
 
@@ -268,15 +335,20 @@ class InstruksiKerjaLemburController extends Controller
             'record' => [
                 'vcCounter' => $header->vcCounter,
                 'vcKodeDivisi' => $header->vcBusinessUnit, // Divisi disimpan di BusinessUnit
+                'namaDivisi' => $header->divisi ? $header->divisi->vcNamaDivisi : '',
                 'vcKodeDept' => $header->vcKodeDept,
+                'namaDept' => $header->departemen ? $header->departemen->vcNamaDept : '',
                 'vcKodeBagian' => $header->vcKodeBagian,
+                'namaBagian' => $header->bagian ? $header->bagian->vcNamaBagian : '',
                 'dtTanggalLembur' => $header->dtTanggalLembur->format('Y-m-d'),
                 'vcJenisLembur' => $header->vcJenisLembur ?? '',
                 'vcAlasanDasarLembur' => $header->vcAlasanDasarLembur,
+                'is_free_role' => $computedFreeRole,
                 'decRencanaDurasiJam' => $header->decRencanaDurasiJam ? number_format($header->decRencanaDurasiJam, 2, '.', '') : '',
                 'dtRencanaDariPukul' => $header->dtRencanaDariPukul ? substr($header->dtRencanaDariPukul, 0, 5) : '',
                 'dtRencanaSampaiPukul' => $header->dtRencanaSampaiPukul ? substr($header->dtRencanaSampaiPukul, 0, 5) : '',
                 'vcDiajukanOleh' => $header->vcDiajukanOleh,
+                'namaPengaju' => $header->pengaju ? $header->pengaju->Nama : '',
                 'vcJabatanPengaju' => $header->vcJabatanPengaju ?? '',
                 'vcJabatanPengajuNama' => $header->vcJabatanPengaju ? (Jabatan::where('vcKodeJabatan', $header->vcJabatanPengaju)->value('vcNamaJabatan') ?? '') : '',
                 'vcKepalaDept' => $header->vcKepalaDept ?? '',
@@ -298,13 +370,14 @@ class InstruksiKerjaLemburController extends Controller
             'vcAlasanDasarLembur' => 'nullable|string|max:200',
             'details' => 'required|array|min:1',
             'details.*.vcNik' => 'required|string|max:10|exists:m_karyawan,Nik',
-            'details.*.dtJamMulaiLembur' => ['required', 'string', 'regex:/^([01][0-9]|2[0-3]):[0-5][0-9]$/'],
-            'details.*.dtJamSelesaiLembur' => ['required', 'string', 'regex:/^([01][0-9]|2[0-3]):[0-5][0-9]$/'],
+            'details.*.dtJamMulaiLembur' => ['required', 'string', 'date_format:H:i'],
+            'details.*.dtJamSelesaiLembur' => ['required', 'string', 'date_format:H:i'],
             'details.*.decDurasiLembur' => 'nullable|numeric|min:0',
             'details.*.intDurasiIstirahat' => 'nullable|integer|min:0',
             'details.*.vcDeskripsiLembur' => 'nullable|string|max:200',
             'details.*.vcPenanggungBebanLembur' => 'nullable|string|max:20',
             'details.*.vcPenanggungBebanLainnya' => 'nullable|string|max:100',
+            'freeRoleEnabled' => 'nullable|boolean',
         ], [
             'vcKodeDivisi.required' => 'Divisi harus diisi',
             'vcKodeDept.required' => 'Departemen harus diisi',
@@ -342,6 +415,7 @@ class InstruksiKerjaLemburController extends Controller
                 'vcDiajukanOleh' => $request->vcDiajukanOleh,
                 'vcJabatanPengaju' => $request->vcJabatanPengaju ? substr($request->vcJabatanPengaju, 0, 10) : null,
                 'vcKepalaDept' => $request->vcKepalaDept ? substr($request->vcKepalaDept, 0, 100) : null,
+                'is_free_role' => $request->boolean('freeRoleEnabled'),
                 'vcPenanggungBiaya' => null,
                 'vcPenanggungBiayaLainnya' => null,
                 'dtChange' => Carbon::now(),
@@ -388,7 +462,50 @@ class InstruksiKerjaLemburController extends Controller
                     ? (strlen($detail['dtJamSelesaiLembur']) == 5 ? $detail['dtJamSelesaiLembur'] . ':00' : substr($detail['dtJamSelesaiLembur'], 0, 8))
                     : null;
 
-                LemburDetail::create([
+                // Hitung nominal lembur jika ada penanggung beban dan jam lembur
+                $decLemburExternal = null;
+                if (!empty($detail['vcPenanggungBebanLembur']) && $jamMulaiLembur && $jamSelesaiLembur) {
+                    try {
+                        // Ambil gapok karyawan
+                        $gapok = Gapok::find($karyawan->Gol);
+                        if ($gapok) {
+                            // Hitung gapok per bulan
+                            $gapokPerBulan = (float) ($gapok->upah ?? 0)
+                                + (float) ($gapok->tunj_keluarga ?? 0)
+                                + (float) ($gapok->tunj_masa_kerja ?? 0)
+                                + (float) ($gapok->tunj_jabatan1 ?? 0)
+                                + (float) ($gapok->tunj_jabatan2 ?? 0);
+
+                            // Ambil hari libur list untuk cek apakah hari libur
+                            $tanggalLembur = Carbon::parse($request->dtTanggalLembur)->format('Y-m-d');
+                            $hariLiburList = HariLibur::where('dtTanggal', $tanggalLembur)
+                                ->pluck('dtTanggal')
+                                ->map(function ($tanggal) {
+                                    return $tanggal instanceof Carbon ? $tanggal->format('Y-m-d') : Carbon::parse($tanggal)->format('Y-m-d');
+                                })
+                                ->toArray();
+
+                            // Hitung total jam lembur
+                            $durasiIstirahat = isset($detail['intDurasiIstirahat']) ? (int)$detail['intDurasiIstirahat'] : 0;
+                            $jamMulai = substr($jamMulaiLembur, 0, 5);
+                            $jamSelesai = substr($jamSelesaiLembur, 0, 5);
+                            $totalJamLembur = LemburCalculationService::calculateTotalJamLembur($jamMulai, $jamSelesai, $tanggalLembur, $durasiIstirahat);
+
+                            // Cek apakah hari libur
+                            $isHariLibur = LemburCalculationService::isHariLibur($tanggalLembur, $hariLiburList);
+
+                            // Hitung nominal lembur
+                            $lemburCalculation = LemburCalculationService::calculateLemburNominal($gapokPerBulan, $totalJamLembur, $isHariLibur);
+                            $decLemburExternal = $lemburCalculation['nominal'];
+                        }
+                    } catch (\Exception $e) {
+                        Log::warning('Error calculating lembur external for NIK ' . $detail['vcNik'] . ': ' . $e->getMessage());
+                        // Continue tanpa nominal jika ada error
+                    }
+                }
+
+                // Prepare data untuk create
+                $detailData = [
                     'vcCounterDetail' => $counterDetail,
                     'vcCounterHeader' => $header->vcCounter,
                     'vcNik' => substr($detail['vcNik'], 0, 8),
@@ -402,7 +519,14 @@ class InstruksiKerjaLemburController extends Controller
                     'vcPenanggungBebanLembur' => isset($detail['vcPenanggungBebanLembur']) ? substr($detail['vcPenanggungBebanLembur'], 0, 20) : null,
                     'vcPenanggungBebanLainnya' => isset($detail['vcPenanggungBebanLainnya']) ? substr($detail['vcPenanggungBebanLainnya'], 0, 100) : null,
                     'dtCreate' => Carbon::now(),
-                ]);
+                ];
+
+                // Tambahkan decLemburExternal hanya jika kolom ada di database
+                if (Schema::hasColumn('t_lembur_detail', 'decLemburExternal')) {
+                    $detailData['decLemburExternal'] = $decLemburExternal;
+                }
+
+                LemburDetail::create($detailData);
 
                 // Update atau create record di t_absen untuk realisasi lembur
                 $tanggalLembur = Carbon::parse($request->dtTanggalLembur)->format('Y-m-d');
@@ -606,6 +730,21 @@ class InstruksiKerjaLemburController extends Controller
     }
 
     /**
+     * Get all active karyawans (for Free Role mode - no filtering)
+     */
+    public function getAllKaryawans(Request $request)
+    {
+        $karyawans = Karyawan::where('vcAktif', '1')
+            ->orderBy('Nama')
+            ->get(['Nik', 'Nama']);
+
+        return response()->json([
+            'success' => true,
+            'karyawans' => $karyawans
+        ]);
+    }
+
+    /**
      * Get kepala departemen berdasarkan kode departemen
      */
     public function getKepalaDept(Request $request)
@@ -681,6 +820,86 @@ class InstruksiKerjaLemburController extends Controller
             'success' => false,
             'message' => 'Kepala departemen tidak ditemukan'
         ]);
+    }
+
+    /**
+     * Calculate lembur nominal for preview
+     */
+    public function calculateLemburNominal(Request $request)
+    {
+        $request->validate([
+            'nik' => 'required|string',
+            'tanggal' => 'required|date',
+            'jam_mulai' => 'required|string|date_format:H:i',
+            'jam_selesai' => 'required|string|date_format:H:i',
+            'durasi_istirahat' => 'nullable|integer|min:0',
+        ]);
+
+        try {
+            $karyawan = Karyawan::where('Nik', $request->nik)->first();
+            if (!$karyawan) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Karyawan tidak ditemukan'
+                ], 404);
+            }
+
+            // Ambil gapok karyawan
+            $gapok = Gapok::find($karyawan->Gol);
+            if (!$gapok) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Golongan karyawan tidak ditemukan di master gapok'
+                ], 404);
+            }
+
+            // Hitung gapok per bulan
+            $gapokPerBulan = (float) ($gapok->upah ?? 0)
+                + (float) ($gapok->tunj_keluarga ?? 0)
+                + (float) ($gapok->tunj_masa_kerja ?? 0)
+                + (float) ($gapok->tunj_jabatan1 ?? 0)
+                + (float) ($gapok->tunj_jabatan2 ?? 0);
+
+            // Ambil hari libur list untuk cek apakah hari libur
+            $tanggalLembur = Carbon::parse($request->tanggal)->format('Y-m-d');
+            $hariLiburList = HariLibur::where('dtTanggal', $tanggalLembur)
+                ->pluck('dtTanggal')
+                ->map(function ($tanggal) {
+                    return $tanggal instanceof Carbon ? $tanggal->format('Y-m-d') : Carbon::parse($tanggal)->format('Y-m-d');
+                })
+                ->toArray();
+
+            // Hitung total jam lembur
+            $durasiIstirahat = (int) ($request->durasi_istirahat ?? 0);
+            $totalJamLembur = LemburCalculationService::calculateTotalJamLembur(
+                $request->jam_mulai,
+                $request->jam_selesai,
+                $tanggalLembur,
+                $durasiIstirahat
+            );
+
+            // Cek apakah hari libur
+            $isHariLibur = LemburCalculationService::isHariLibur($tanggalLembur, $hariLiburList);
+
+            // Hitung nominal lembur
+            $lemburCalculation = LemburCalculationService::calculateLemburNominal($gapokPerBulan, $totalJamLembur, $isHariLibur);
+
+            return response()->json([
+                'success' => true,
+                'nominal' => $lemburCalculation['nominal'],
+                'total_jam' => $totalJamLembur,
+                'is_hari_libur' => $isHariLibur,
+                'gapok_per_bulan' => $gapokPerBulan,
+                'rate_per_jam' => round($gapokPerBulan / 173, 2),
+                'detail' => $lemburCalculation,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error calculating lembur nominal: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat menghitung nominal: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Bagian;
 use App\Models\Jabatan;
 use App\Models\Karyawan;
+use App\Models\Divisi;
 use Illuminate\Support\Facades\Log;
 
 class BagianController extends Controller
@@ -13,11 +14,39 @@ class BagianController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $bagians = Bagian::with('jabatan')->orderBy('vcKodeBagian')->get();
+        // Mapping divisi ke prefix untuk filter
+        $prefixMapping = [
+            'RMA' => 'BRMA',
+            'SIA-CPD' => 'BSIA',
+            'SIA-P11' => 'BSIA',
+            'SIA-P112' => 'BSIA',
+            'SIA-P12' => 'BSIA',
+            'SMU' => 'BSMU',
+        ];
+
+        // Get filter divisi dari request
+        $filterDivisi = $request->get('filter_divisi', '');
+
+        // Query bagian
+        $query = Bagian::with('jabatan');
+
+        // Apply filter berdasarkan divisi
+        if ($filterDivisi && isset($prefixMapping[$filterDivisi])) {
+            $prefix = $prefixMapping[$filterDivisi];
+            $query->where('vcKodeBagian', 'like', $prefix . '%');
+        }
+
+        $bagians = $query->orderBy('vcKodeBagian')->get();
         $jabatans = Jabatan::orderBy('vcKodeJabatan')->get();
-        return view('master.bagian.index', compact('bagians', 'jabatans'));
+        
+        // Load divisi untuk dropdown (hanya yang relevan: RMA, SIA-CPD, SIA-P11, SIA-P112, SIA-P12, SMU)
+        $divisis = Divisi::whereIn('vcKodeDivisi', ['RMA', 'SIA-CPD', 'SIA-P11', 'SIA-P112', 'SIA-P12', 'SMU'])
+            ->orderBy('vcKodeDivisi')
+            ->get(['vcKodeDivisi', 'vcNamaDivisi']);
+        
+        return view('master.bagian.index', compact('bagians', 'jabatans', 'divisis', 'filterDivisi'));
     }
 
     /**
@@ -38,8 +67,9 @@ class BagianController extends Controller
 
         Bagian::create($data);
 
-        if ($request->ajax()) {
-            return response()->json(['success' => true, 'message' => 'Bagian berhasil ditambahkan.']);
+        // Selalu return JSON untuk AJAX request (cek Accept header atau ajax())
+        if ($request->ajax() || $request->wantsJson() || $request->expectsJson()) {
+            return response()->json(['success' => true, 'message' => 'Data berhasil disimpan']);
         }
 
         return redirect()->route('bagian.index')
@@ -201,6 +231,77 @@ class BagianController extends Controller
         return response()->json([
             'success' => false,
             'message' => 'Karyawan dengan kombinasi kode bagian dan jabatan tersebut tidak ditemukan atau tidak aktif'
+        ]);
+    }
+
+    /**
+     * Generate kode bagian otomatis berdasarkan divisi
+     */
+    public function generateKodeBagian(Request $request)
+    {
+        $request->validate([
+            'divisi' => 'required|string|max:20',
+        ]);
+
+        $kodeDivisi = $request->divisi;
+
+        // Mapping divisi ke prefix
+        $prefixMapping = [
+            'RMA' => 'BRMA',
+            'SIA-CPD' => 'BSIA',
+            'SIA-P11' => 'BSIA',
+            'SIA-P112' => 'BSIA',
+            'SIA-P12' => 'BSIA',
+            'SMU' => 'BSMU',
+        ];
+
+        // Tentukan prefix berdasarkan divisi
+        $prefix = $prefixMapping[$kodeDivisi] ?? null;
+
+        if (!$prefix) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Divisi tidak valid untuk generate kode bagian'
+            ], 422);
+        }
+
+        // Cari counter terakhir dari kode bagian yang sudah ada dengan prefix yang sama
+        $lastKode = Bagian::where('vcKodeBagian', 'like', $prefix . '%')
+            ->orderBy('vcKodeBagian', 'desc')
+            ->value('vcKodeBagian');
+
+        // Extract counter dari kode terakhir
+        $counter = 1;
+        if ($lastKode) {
+            // Ambil bagian counter (setelah prefix)
+            $counterStr = substr($lastKode, strlen($prefix));
+            // Coba parse sebagai integer
+            $lastCounter = (int) $counterStr;
+            if ($lastCounter > 0) {
+                $counter = $lastCounter + 1;
+            }
+        }
+
+        // Format counter dengan 3 digit (001, 002, dst)
+        $counterFormatted = str_pad($counter, 3, '0', STR_PAD_LEFT);
+
+        // Generate kode baru
+        $newKode = $prefix . $counterFormatted;
+
+        // Pastikan kode belum ada (safety check)
+        $exists = Bagian::where('vcKodeBagian', $newKode)->exists();
+        if ($exists) {
+            // Jika sudah ada, cari counter berikutnya
+            $counter++;
+            $counterFormatted = str_pad($counter, 3, '0', STR_PAD_LEFT);
+            $newKode = $prefix . $counterFormatted;
+        }
+
+        return response()->json([
+            'success' => true,
+            'kodeBagian' => $newKode,
+            'prefix' => $prefix,
+            'counter' => $counter
         ]);
     }
 }

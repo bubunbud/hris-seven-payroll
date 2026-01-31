@@ -143,6 +143,10 @@ class UpdateClosingGajiController extends Controller
 
         // Auto-fill jika kosong
         $data = $request->all();
+        
+        // Hapus field yang tidak perlu (seperti _method, _token)
+        unset($data['_method'], $data['_token']);
+        
         if (empty($data['vcKodeGolongan'])) {
             $data['vcKodeGolongan'] = $karyawan->Gol;
         }
@@ -152,8 +156,15 @@ class UpdateClosingGajiController extends Controller
         if (empty($data['vcStatusPegawai'])) {
             $data['vcStatusPegawai'] = $karyawan->Status_Pegawai;
         }
-        $data['dtCreate'] = Carbon::now();
-        $data['dtChange'] = Carbon::now();
+        
+        // Format datetime sebagai string
+        $data['dtCreate'] = Carbon::now()->format('Y-m-d H:i:s');
+        $data['dtChange'] = Carbon::now()->format('Y-m-d H:i:s');
+        
+        // Pastikan format tanggal yang benar untuk composite key
+        $data['vcPeriodeAwal'] = Carbon::parse($data['vcPeriodeAwal'])->format('Y-m-d');
+        $data['vcPeriodeAkhir'] = Carbon::parse($data['vcPeriodeAkhir'])->format('Y-m-d');
+        $data['periode'] = Carbon::parse($data['periode'])->format('Y-m-d');
 
         // Set default 0 untuk numeric fields yang kosong
         $numericFields = [
@@ -227,7 +238,20 @@ class UpdateClosingGajiController extends Controller
         foreach ($numericFields as $field) {
             if (!isset($data[$field]) || $data[$field] === '') {
                 $data[$field] = 0;
+            } else {
+                // Pastikan format numeric yang benar
+                $data[$field] = is_numeric($data[$field]) ? $data[$field] : 0;
             }
+        }
+        
+        // Auto-calculate intJumlahHari jika kosong atau 0
+        // Prioritas: gunakan jumlahHari jika sudah diisi, jika tidak hitung otomatis
+        if (!empty($data['jumlahHari']) && $data['jumlahHari'] > 0) {
+            // Copy dari jumlahHari ke intJumlahHari
+            $data['intJumlahHari'] = (int) $data['jumlahHari'];
+        } elseif (empty($data['intJumlahHari']) || $data['intJumlahHari'] == 0) {
+            // Hitung otomatis dari periode
+            $data['intJumlahHari'] = $this->calculateJumlahHariKerja($data['vcPeriodeAwal'], $data['vcPeriodeAkhir']);
         }
 
         // Jika closing ke-2, copy data absensi P1 dari closing ke-1 ke field int*Lalu
@@ -246,7 +270,7 @@ class UpdateClosingGajiController extends Controller
             $closingP1 = Closing::where('vcNik', $request->vcNik)
                 ->where('periode', $periodeP1)
                 ->where('vcClosingKe', '1')
-                ->where('vcKodeDivisi', $request->vcKodeDivisi)
+                ->where('vcKodeDivisi', $data['vcKodeDivisi'] ?? $request->vcKodeDivisi)
                 ->first();
 
             if ($closingP1) {
@@ -260,9 +284,31 @@ class UpdateClosingGajiController extends Controller
             }
         }
 
-        DB::table('t_closing')->insert($data);
+        try {
+            // Filter hanya field yang ada di fillable model
+            $fillableFields = (new \App\Models\Closing())->getFillable();
+            $filteredData = array_intersect_key($data, array_flip($fillableFields));
+            
+            DB::table('t_closing')->insert($filteredData);
 
-        return response()->json(['success' => true, 'message' => 'Data Closing Gaji berhasil ditambahkan']);
+            return response()->json(['success' => true, 'message' => 'Data Closing Gaji berhasil ditambahkan']);
+        } catch (\Illuminate\Database\QueryException $e) {
+            \Log::error('Database error storing closing gaji: ' . $e->getMessage());
+            \Log::error('SQL: ' . $e->getSql());
+            \Log::error('Bindings: ' . json_encode($e->getBindings()));
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan database: ' . $e->getMessage()
+            ], 500);
+        } catch (\Exception $e) {
+            \Log::error('Error storing closing gaji: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            \Log::error('Data: ' . json_encode($data));
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat menyimpan data: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     public function show(string $id)
@@ -414,7 +460,17 @@ class UpdateClosingGajiController extends Controller
 
         // Update menggunakan DB::table karena composite key
         $data = $request->all();
-        $data['dtChange'] = Carbon::now();
+        
+        // Hapus field yang tidak perlu (seperti _method, _token)
+        unset($data['_method'], $data['_token']);
+        
+        // Format dtChange sebagai datetime string
+        $data['dtChange'] = Carbon::now()->format('Y-m-d H:i:s');
+        
+        // Pastikan format tanggal yang benar untuk composite key
+        $data['vcPeriodeAwal'] = Carbon::parse($data['vcPeriodeAwal'])->format('Y-m-d');
+        $data['vcPeriodeAkhir'] = Carbon::parse($data['vcPeriodeAkhir'])->format('Y-m-d');
+        $data['periode'] = Carbon::parse($data['periode'])->format('Y-m-d');
 
         // Set default 0 untuk numeric fields yang kosong
         $numericFields = [
@@ -488,7 +544,20 @@ class UpdateClosingGajiController extends Controller
         foreach ($numericFields as $field) {
             if (!isset($data[$field]) || $data[$field] === '') {
                 $data[$field] = 0;
+            } else {
+                // Pastikan format numeric yang benar
+                $data[$field] = is_numeric($data[$field]) ? $data[$field] : 0;
             }
+        }
+        
+        // Auto-calculate intJumlahHari jika kosong atau 0
+        // Prioritas: gunakan jumlahHari jika sudah diisi, jika tidak hitung otomatis
+        if (!empty($data['jumlahHari']) && $data['jumlahHari'] > 0) {
+            // Copy dari jumlahHari ke intJumlahHari
+            $data['intJumlahHari'] = (int) $data['jumlahHari'];
+        } elseif (empty($data['intJumlahHari']) || $data['intJumlahHari'] == 0) {
+            // Hitung otomatis dari periode
+            $data['intJumlahHari'] = $this->calculateJumlahHariKerja($data['vcPeriodeAwal'], $data['vcPeriodeAkhir']);
         }
 
         // Jika closing ke-2, copy data absensi P1 dari closing ke-1 ke field int*Lalu
@@ -521,46 +590,73 @@ class UpdateClosingGajiController extends Controller
             }
         }
 
-        // Jika composite key berubah, hapus yang lama dan insert yang baru
-        if ($oldKey != $newKey) {
-            // Ambil dtCreate dari record lama sebelum delete
-            $oldRecord = DB::table('t_closing')
-                ->where('vcPeriodeAwal', $oldKey['vcPeriodeAwal'])
-                ->where('vcPeriodeAkhir', $oldKey['vcPeriodeAkhir'])
-                ->where('vcNik', $oldKey['vcNik'])
-                ->where('periode', $oldKey['periode'])
-                ->where('vcClosingKe', $oldKey['vcClosingKe'])
-                ->first();
+        try {
+            // Filter hanya field yang ada di fillable model
+            $fillableFields = (new \App\Models\Closing())->getFillable();
+            $filteredData = array_intersect_key($data, array_flip($fillableFields));
+            
+            // Jika composite key berubah, hapus yang lama dan insert yang baru
+            if ($oldKey != $newKey) {
+                // Ambil dtCreate dari record lama sebelum delete
+                $oldRecord = DB::table('t_closing')
+                    ->where('vcPeriodeAwal', $oldKey['vcPeriodeAwal'])
+                    ->where('vcPeriodeAkhir', $oldKey['vcPeriodeAkhir'])
+                    ->where('vcNik', $oldKey['vcNik'])
+                    ->where('periode', $oldKey['periode'])
+                    ->where('vcClosingKe', $oldKey['vcClosingKe'])
+                    ->first();
 
-            if ($oldRecord && isset($oldRecord->dtCreate)) {
-                $data['dtCreate'] = $oldRecord->dtCreate;
+                if ($oldRecord && isset($oldRecord->dtCreate)) {
+                    // Pastikan format datetime yang benar
+                    $filteredData['dtCreate'] = $oldRecord->dtCreate instanceof \DateTime 
+                        ? $oldRecord->dtCreate->format('Y-m-d H:i:s')
+                        : (is_string($oldRecord->dtCreate) ? $oldRecord->dtCreate : Carbon::now()->format('Y-m-d H:i:s'));
+                } else {
+                    $filteredData['dtCreate'] = Carbon::now()->format('Y-m-d H:i:s');
+                }
+
+                // Hapus record lama
+                DB::table('t_closing')
+                    ->where('vcPeriodeAwal', $oldKey['vcPeriodeAwal'])
+                    ->where('vcPeriodeAkhir', $oldKey['vcPeriodeAkhir'])
+                    ->where('vcNik', $oldKey['vcNik'])
+                    ->where('periode', $oldKey['periode'])
+                    ->where('vcClosingKe', $oldKey['vcClosingKe'])
+                    ->delete();
+
+                // Insert record baru
+                DB::table('t_closing')->insert($filteredData);
             } else {
-                $data['dtCreate'] = Carbon::now();
+                // Update langsung - hapus dtCreate dari data karena tidak perlu di-update
+                unset($filteredData['dtCreate']);
+                
+                DB::table('t_closing')
+                    ->where('vcPeriodeAwal', $oldKey['vcPeriodeAwal'])
+                    ->where('vcPeriodeAkhir', $oldKey['vcPeriodeAkhir'])
+                    ->where('vcNik', $oldKey['vcNik'])
+                    ->where('periode', $oldKey['periode'])
+                    ->where('vcClosingKe', $oldKey['vcClosingKe'])
+                    ->update($filteredData);
             }
 
-            // Hapus record lama
-            DB::table('t_closing')
-                ->where('vcPeriodeAwal', $oldKey['vcPeriodeAwal'])
-                ->where('vcPeriodeAkhir', $oldKey['vcPeriodeAkhir'])
-                ->where('vcNik', $oldKey['vcNik'])
-                ->where('periode', $oldKey['periode'])
-                ->where('vcClosingKe', $oldKey['vcClosingKe'])
-                ->delete();
-
-            // Insert record baru
-            DB::table('t_closing')->insert($data);
-        } else {
-            // Update langsung
-            DB::table('t_closing')
-                ->where('vcPeriodeAwal', $oldKey['vcPeriodeAwal'])
-                ->where('vcPeriodeAkhir', $oldKey['vcPeriodeAkhir'])
-                ->where('vcNik', $oldKey['vcNik'])
-                ->where('periode', $oldKey['periode'])
-                ->where('vcClosingKe', $oldKey['vcClosingKe'])
-                ->update($data);
+            return response()->json(['success' => true, 'message' => 'Data Closing Gaji berhasil diperbarui']);
+        } catch (\Illuminate\Database\QueryException $e) {
+            \Log::error('Database error updating closing gaji: ' . $e->getMessage());
+            \Log::error('SQL: ' . $e->getSql());
+            \Log::error('Bindings: ' . json_encode($e->getBindings()));
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan database: ' . $e->getMessage()
+            ], 500);
+        } catch (\Exception $e) {
+            \Log::error('Error updating closing gaji: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            \Log::error('Data: ' . json_encode($data));
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat memperbarui data: ' . $e->getMessage()
+            ], 500);
         }
-
-        return response()->json(['success' => true, 'message' => 'Data Closing Gaji berhasil diperbarui']);
     }
 
     public function destroy(string $id)
@@ -630,6 +726,51 @@ class UpdateClosingGajiController extends Controller
             'success' => true,
             'jumlah_hari' => $count
         ]);
+    }
+
+    /**
+     * Helper method untuk menghitung jumlah hari kerja
+     * @param string $tanggalAwal Format Y-m-d
+     * @param string $tanggalAkhir Format Y-m-d
+     * @return int
+     */
+    private function calculateJumlahHariKerja($tanggalAwal, $tanggalAkhir)
+    {
+        $tanggalAwalParsed = Carbon::parse($tanggalAwal);
+        $tanggalAkhirParsed = Carbon::parse($tanggalAkhir);
+
+        // Get hari libur (weekend + holidays)
+        $hariLibur = HariLibur::whereBetween('dtTanggal', [$tanggalAwalParsed->format('Y-m-d'), $tanggalAkhirParsed->format('Y-m-d')])
+            ->pluck('dtTanggal')
+            ->map(function ($tanggal) {
+                return $tanggal instanceof Carbon ? $tanggal->format('Y-m-d') : Carbon::parse($tanggal)->format('Y-m-d');
+            })
+            ->toArray();
+
+        // Add weekends
+        $current = $tanggalAwalParsed->copy();
+        while ($current->lte($tanggalAkhirParsed)) {
+            if (in_array($current->dayOfWeek, [0, 6])) { // 0 = Minggu, 6 = Sabtu
+                $tanggalStr = $current->format('Y-m-d');
+                if (!in_array($tanggalStr, $hariLibur)) {
+                    $hariLibur[] = $tanggalStr;
+                }
+            }
+            $current->addDay();
+        }
+
+        // Calculate working days
+        $count = 0;
+        $current = $tanggalAwalParsed->copy();
+        while ($current->lte($tanggalAkhirParsed)) {
+            $tanggalStr = $current->format('Y-m-d');
+            if (!in_array($tanggalStr, $hariLibur)) {
+                $count++;
+            }
+            $current->addDay();
+        }
+
+        return $count;
     }
 
     /**

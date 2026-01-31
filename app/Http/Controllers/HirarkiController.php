@@ -8,6 +8,7 @@ use App\Models\Bagian;
 use App\Models\Seksi;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class HirarkiController extends Controller
@@ -132,35 +133,54 @@ class HirarkiController extends Controller
      */
     public function storeDept(Request $request)
     {
-        $request->validate([
-            'vcKodeDivisi' => 'required|string',
-            'vcKodeDept' => 'required|string',
-        ]);
+        try {
+            $request->validate([
+                'vcKodeDivisi' => 'required|string',
+                'vcKodeDept' => 'required|string',
+            ]);
 
-        // Check if already exists
-        $exists = DB::table('m_hirarki_dept')
-            ->where('vcKodeDivisi', $request->vcKodeDivisi)
-            ->where('vcKodeDept', $request->vcKodeDept)
-            ->exists();
+            // Check if already exists
+            $exists = DB::table('m_hirarki_dept')
+                ->where('vcKodeDivisi', $request->vcKodeDivisi)
+                ->where('vcKodeDept', $request->vcKodeDept)
+                ->exists();
 
-        if ($exists) {
+            if ($exists) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Relasi Divisi dengan Departemen ini sudah ada!'
+                ], 422);
+            }
+
+            DB::table('m_hirarki_dept')->insert([
+                'vcKodeDivisi' => $request->vcKodeDivisi,
+                'vcKodeDept' => $request->vcKodeDept,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Relasi Divisi dengan Departemen berhasil ditambahkan!'
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $errors = $e->errors();
+            $errorMessages = [];
+            foreach ($errors as $field => $messages) {
+                $errorMessages = array_merge($errorMessages, $messages);
+            }
             return response()->json([
                 'success' => false,
-                'message' => 'Relasi Divisi dengan Departemen ini sudah ada!'
+                'message' => 'Validasi gagal: ' . implode(', ', $errorMessages)
             ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error storing hirarki dept: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
         }
-
-        DB::table('m_hirarki_dept')->insert([
-            'vcKodeDivisi' => $request->vcKodeDivisi,
-            'vcKodeDept' => $request->vcKodeDept,
-            'dtCreate' => Carbon::now(),
-            'dtChange' => Carbon::now(),
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Relasi Divisi dengan Departemen berhasil ditambahkan!'
-        ]);
     }
 
     /**
@@ -189,38 +209,57 @@ class HirarkiController extends Controller
      */
     public function storeBagian(Request $request)
     {
-        $request->validate([
-            'vcKodeDivisi' => 'required|string',
-            'vcKodeDept' => 'required|string',
-            'vcKodeBagian' => 'required|string',
-        ]);
+        try {
+            $request->validate([
+                'vcKodeDivisi' => 'required|string',
+                'vcKodeDept' => 'required|string',
+                'vcKodeBagian' => 'required|string',
+            ]);
 
-        // Check if already exists
-        $exists = DB::table('m_hirarki_bagian')
-            ->where('vcKodeDivisi', $request->vcKodeDivisi)
-            ->where('vcKodeDept', $request->vcKodeDept)
-            ->where('vcKodeBagian', $request->vcKodeBagian)
-            ->exists();
+            // Check if already exists
+            $exists = DB::table('m_hirarki_bagian')
+                ->where('vcKodeDivisi', $request->vcKodeDivisi)
+                ->where('vcKodeDept', $request->vcKodeDept)
+                ->where('vcKodeBagian', $request->vcKodeBagian)
+                ->exists();
 
-        if ($exists) {
+            if ($exists) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Relasi Divisi, Departemen dengan Bagian ini sudah ada!'
+                ], 422);
+            }
+
+            DB::table('m_hirarki_bagian')->insert([
+                'vcKodeDivisi' => $request->vcKodeDivisi,
+                'vcKodeDept' => $request->vcKodeDept,
+                'vcKodeBagian' => $request->vcKodeBagian,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Relasi Divisi, Departemen dengan Bagian berhasil ditambahkan!'
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $errors = $e->errors();
+            $errorMessages = [];
+            foreach ($errors as $field => $messages) {
+                $errorMessages = array_merge($errorMessages, $messages);
+            }
             return response()->json([
                 'success' => false,
-                'message' => 'Relasi Divisi, Departemen dengan Bagian ini sudah ada!'
+                'message' => 'Validasi gagal: ' . implode(', ', $errorMessages)
             ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error storing hirarki bagian: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
         }
-
-        DB::table('m_hirarki_bagian')->insert([
-            'vcKodeDivisi' => $request->vcKodeDivisi,
-            'vcKodeDept' => $request->vcKodeDept,
-            'vcKodeBagian' => $request->vcKodeBagian,
-            'dtCreate' => Carbon::now(),
-            'dtChange' => Carbon::now(),
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Relasi Divisi, Departemen dengan Bagian berhasil ditambahkan!'
-        ]);
     }
 
     /**
@@ -251,41 +290,60 @@ class HirarkiController extends Controller
      */
     public function storeSeksi(Request $request)
     {
-        $request->validate([
-            'vcKodeDivisi' => 'required|string',
-            'vcKodeDept' => 'required|string',
-            'vcKodeBagian' => 'required|string',
-            'vcKodeSeksi' => 'required|string',
-        ]);
+        try {
+            $request->validate([
+                'vcKodeDivisi' => 'required|string',
+                'vcKodeDept' => 'required|string',
+                'vcKodeBagian' => 'required|string',
+                'vcKodeSeksi' => 'required|string',
+            ]);
 
-        // Check if already exists
-        $exists = DB::table('m_hirarki_seksi')
-            ->where('vcKodeDivisi', $request->vcKodeDivisi)
-            ->where('vcKodeDept', $request->vcKodeDept)
-            ->where('vcKodeBagian', $request->vcKodeBagian)
-            ->where('vcKodeSeksi', $request->vcKodeSeksi)
-            ->exists();
+            // Check if already exists
+            $exists = DB::table('m_hirarki_seksi')
+                ->where('vcKodeDivisi', $request->vcKodeDivisi)
+                ->where('vcKodeDept', $request->vcKodeDept)
+                ->where('vcKodeBagian', $request->vcKodeBagian)
+                ->where('vcKodeSeksi', $request->vcKodeSeksi)
+                ->exists();
 
-        if ($exists) {
+            if ($exists) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Relasi Divisi, Departemen, Bagian dengan Seksi ini sudah ada!'
+                ], 422);
+            }
+
+            DB::table('m_hirarki_seksi')->insert([
+                'vcKodeDivisi' => $request->vcKodeDivisi,
+                'vcKodeDept' => $request->vcKodeDept,
+                'vcKodeBagian' => $request->vcKodeBagian,
+                'vcKodeSeksi' => $request->vcKodeSeksi,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Relasi Divisi, Departemen, Bagian dengan Seksi berhasil ditambahkan!'
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $errors = $e->errors();
+            $errorMessages = [];
+            foreach ($errors as $field => $messages) {
+                $errorMessages = array_merge($errorMessages, $messages);
+            }
             return response()->json([
                 'success' => false,
-                'message' => 'Relasi Divisi, Departemen, Bagian dengan Seksi ini sudah ada!'
+                'message' => 'Validasi gagal: ' . implode(', ', $errorMessages)
             ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error storing hirarki seksi: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
         }
-
-        DB::table('m_hirarki_seksi')->insert([
-            'vcKodeDivisi' => $request->vcKodeDivisi,
-            'vcKodeDept' => $request->vcKodeDept,
-            'vcKodeBagian' => $request->vcKodeBagian,
-            'vcKodeSeksi' => $request->vcKodeSeksi,
-            'dtCreate' => Carbon::now(),
-            'dtChange' => Carbon::now(),
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Relasi Divisi, Departemen, Bagian dengan Seksi berhasil ditambahkan!'
-        ]);
     }
 
     /**

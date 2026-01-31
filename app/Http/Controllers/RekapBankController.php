@@ -4,11 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Closing;
 use App\Models\Divisi;
-use App\Exports\RekapBankExport;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
-use Maatwebsite\Excel\Facades\Excel;
 
 class RekapBankController extends Controller
 {
@@ -85,7 +83,7 @@ class RekapBankController extends Controller
     }
 
     /**
-     * Export rekap bank ke Excel menggunakan Laravel Excel
+     * Export rekap bank ke Excel
      */
     public function exportExcel(Request $request)
     {
@@ -129,13 +127,150 @@ class RekapBankController extends Controller
         }
         $namaDivisi = $divisiData ? $divisiData->vcNamaDivisi : '';
 
-        // Generate filename
-        $filename = 'Rekap_Bank_' . Carbon::parse($tanggalPeriode)->format('Ymd') . '.xlsx';
+        // Generate Excel content menggunakan format TSV (Tab Separated Values) untuk Excel
+        $filename = 'Rekap_Bank_' . Carbon::parse($tanggalPeriode)->format('Ymd') . '.xls';
 
-        // Export menggunakan Laravel Excel
-        return Excel::download(
-            new RekapBankExport($closings, $tanggalAwal, $tanggalAkhir, $namaDivisi, $kodeDivisi),
-            $filename
-        );
+        $headers = [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        $callback = function () use ($closings, $tanggalAwal, $tanggalAkhir, $namaDivisi, $kodeDivisi) {
+            $file = fopen('php://output', 'w');
+
+            // Add BOM for UTF-8
+            fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+            // Header
+            $this->putCsvLine($file, ['REKAP BANK']);
+            $this->putCsvLine($file, ['Periode: ' . Carbon::parse($tanggalAwal)->format('d F Y')]);
+            if ($kodeDivisi && $kodeDivisi != 'SEMUA') {
+                $this->putCsvLine($file, ['Divisi: ' . $kodeDivisi . ' -> ' . $namaDivisi]);
+            } else {
+                $this->putCsvLine($file, ['Divisi: SEMUA DIVISI']);
+            }
+            $this->putCsvLine($file, []); // Empty row
+
+            // Column headers
+            $this->putCsvLine($file, [
+                'No',
+                'NIK',
+                'Nama',
+                'Jenis Kelamin',
+                'Tgl. Lahir',
+                'Tipe ID',
+                'No. KTP',
+                'No. Rekening',
+                'CIF',
+                'Unit Bisnis',
+                'Gaji + Lembur',
+                'Beban TGI',
+                'SIA-EXP',
+                'SIA-Prod',
+                'Beban RMA',
+                'Beban SMU',
+                'ABN JKT',
+                'BPJS Kes',
+                'BPJS Naker',
+                'BPJS Pen',
+                'Iuran SPN',
+                'Pot Lain-lain',
+                'Pot. Koperasi',
+                'DPLK/CAR',
+                'Jumlah'
+            ]);
+
+            // Data rows
+            $no = 1;
+            foreach ($closings as $closing) {
+                $karyawan = $closing->karyawan;
+                if (!$karyawan) continue;
+
+                // Hitung Gaji + Lembur
+                $gajiLembur = ($closing->decGapok ?? 0) +
+                    ($closing->decUangMakan ?? 0) +
+                    ($closing->decTransport ?? 0) +
+                    ($closing->decPremi ?? 0) +
+                    (($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0)) +
+                    ($closing->decRapel ?? 0);
+
+                // Hitung Pot Lain-lain = decPotonganLain + decPotonganAbsen + decPotonganHC
+                $potLainLain = ($closing->decPotonganLain ?? 0) +
+                    ($closing->decPotonganAbsen ?? 0) +
+                    ($closing->decPotonganHC ?? 0);
+
+                // Hitung total potongan
+                $totalPotongan = ($closing->decPotonganBPJSKes ?? 0) +
+                    ($closing->decPotonganBPJSJHT ?? 0) +
+                    ($closing->decPotonganBPJSJP ?? 0) +
+                    ($closing->decIuranSPN ?? 0) +
+                    $potLainLain +
+                    ($closing->decPotonganKoperasi ?? 0) +
+                    ($closing->decPotonganBPR ?? 0);
+
+                // Jumlah = Gaji + Lembur - Total Potongan
+                $jumlah = $gajiLembur - $totalPotongan;
+
+                // Format tanggal lahir
+                $tglLahir = $karyawan->TTL ? Carbon::parse($karyawan->TTL)->format('d/m/Y') : '';
+
+                // CIF dan Unit Bisnis dari divisi
+                $cif = $closing->vcKodeDivisi ?? '';
+                $unitBisnis = $closing->vcKodeDivisi ?? '';
+
+                $this->putCsvLine($file, [
+                    $no++,
+                    $closing->vcNik,
+                    $karyawan->Nama ?? '',
+                    $karyawan->Jenis_Kelamin ?? '',
+                    $tglLahir,
+                    'KTP',
+                    $karyawan->intNoBadge ?? '',
+                    $karyawan->intNorek ?? '',
+                    $cif,
+                    $unitBisnis,
+                    number_format($gajiLembur, 0, ',', '.'),
+                    number_format($closing->decBebanTgi ?? 0, 0, ',', '.'),
+                    number_format($closing->decBebanSiaExp ?? 0, 0, ',', '.'),
+                    number_format($closing->decBebanSiaProd ?? 0, 0, ',', '.'),
+                    number_format($closing->decBebanRma ?? 0, 0, ',', '.'),
+                    number_format($closing->decBebanSmu ?? 0, 0, ',', '.'),
+                    number_format($closing->decBebanAbnJkt ?? 0, 0, ',', '.'),
+                    number_format($closing->decPotonganBPJSKes ?? 0, 0, ',', '.'),
+                    number_format($closing->decPotonganBPJSJHT ?? 0, 0, ',', '.'),
+                    number_format($closing->decPotonganBPJSJP ?? 0, 0, ',', '.'),
+                    number_format($closing->decIuranSPN ?? 0, 0, ',', '.'),
+                    number_format($potLainLain, 0, ',', '.'),
+                    number_format($closing->decPotonganKoperasi ?? 0, 0, ',', '.'),
+                    number_format($closing->decPotonganBPR ?? 0, 0, ',', '.'),
+                    number_format($jumlah, 0, ',', '.')
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Helper function untuk menulis CSV line dengan tab separator untuk Excel
+     */
+    private function putCsvLine($file, $data)
+    {
+        // Gunakan tab sebagai separator untuk Excel (lebih universal)
+        $line = [];
+        foreach ($data as $field) {
+            // Convert ke string dan escape tab/newline
+            $field = (string) $field;
+            // Replace tab dengan space, newline dengan space
+            $field = str_replace(["\t", "\n", "\r"], [' ', ' ', ' '], $field);
+            // Jika mengandung tab atau newline, wrap dengan quotes
+            if (strpos($field, "\t") !== false || strpos($field, "\n") !== false || strpos($field, '"') !== false) {
+                $field = '"' . str_replace('"', '""', $field) . '"';
+            }
+            $line[] = $field;
+        }
+        fwrite($file, implode("\t", $line) . "\n");
     }
 }

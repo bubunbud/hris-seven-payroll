@@ -9,12 +9,14 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Karyawan;
 use App\Models\Keluarga;
 use App\Models\Pendidikan;
+use App\Models\Pelatihan;
 use App\Models\Divisi;
 use App\Models\Departemen;
 use App\Models\Bagian;
 use App\Models\Shift;
 use App\Models\Golongan;
 use App\Models\Jabatan;
+use App\Services\ActivityLogService;
 
 class KaryawanController extends Controller
 {
@@ -176,6 +178,12 @@ class KaryawanController extends Controller
 
         $karyawan = Karyawan::create($data);
 
+        // Log activity
+        ActivityLogService::logCreate(
+            $karyawan,
+            "Menambah karyawan baru: {$karyawan->Nama} (NIK: {$karyawan->Nik})"
+        );
+
         // Catatan: Data keluarga tidak disimpan di sini karena tab Keluarga punya CRUD sendiri
         // Gunakan endpoint terpisah: POST /karyawan/{nik}/keluarga untuk menambah keluarga
 
@@ -196,7 +204,7 @@ class KaryawanController extends Controller
      */
     public function show(string $id)
     {
-        $karyawan = Karyawan::with('jabatan')->findOrFail($id);
+        $karyawan = Karyawan::with(['jabatan', 'shift', 'divisi', 'departemen', 'bagian'])->findOrFail($id);
 
         return response()->json(
             ['success' => true, 'karyawan' => $karyawan],
@@ -217,6 +225,253 @@ class KaryawanController extends Controller
     }
 
     /**
+     * Add family member for a karyawan
+     */
+    public function addFamily(Request $request, string $nik)
+    {
+        $request->validate([
+            'hubKeluarga' => 'required|string|max:50',
+            'NamaKeluarga' => 'required|string|max:150',
+            'jenKelamin' => 'nullable|string|max:10',
+            'temLahir' => 'nullable|string|max:100',
+            'tglLahir' => 'nullable|date',
+            'golDarah' => 'nullable|string|max:5',
+        ]);
+
+        // Check if karyawan exists
+        $karyawan = Karyawan::find($nik);
+        if (!$karyawan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Karyawan dengan NIK ' . $nik . ' tidak ditemukan.'
+            ], 404, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        // Check if already exists (composite key: nik + hubKeluarga + NamaKeluarga)
+        $exists = DB::table('t_keluarga')
+            ->where('nik', $nik)
+            ->where('hubKeluarga', $request->hubKeluarga)
+            ->where('NamaKeluarga', $request->NamaKeluarga)
+            ->exists();
+
+        if ($exists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anggota keluarga dengan hubungan dan nama yang sama sudah ada.'
+            ], 422, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        try {
+            // Insert using DB::table() because of composite primary key
+            DB::table('t_keluarga')->insert([
+                'nik' => $nik,
+                'hubKeluarga' => $request->hubKeluarga,
+                'NamaKeluarga' => $request->NamaKeluarga,
+                'jenKelamin' => $request->jenKelamin,
+                'temLahir' => $request->temLahir,
+                'tglLahir' => $request->tglLahir,
+                'golDarah' => $request->golDarah,
+            ]);
+
+            // Get the inserted record
+            $keluarga = DB::table('t_keluarga')
+                ->where('nik', $nik)
+                ->where('hubKeluarga', $request->hubKeluarga)
+                ->where('NamaKeluarga', $request->NamaKeluarga)
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Anggota keluarga berhasil ditambahkan.',
+                'keluarga' => $keluarga
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        } catch (\Exception $e) {
+            Log::error('Error adding family member: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat menambahkan anggota keluarga: ' . $e->getMessage()
+            ], 500, [], JSON_UNESCAPED_UNICODE);
+        }
+    }
+
+    /**
+     * Update family member for a karyawan
+     */
+    public function updateFamily(Request $request, string $nik, string $hubKeluarga)
+    {
+        $request->validate([
+            'hubKeluarga' => 'required|string|max:50',
+            'NamaKeluarga' => 'required|string|max:150',
+            'jenKelamin' => 'nullable|string|max:10',
+            'temLahir' => 'nullable|string|max:100',
+            'tglLahir' => 'nullable|date',
+            'golDarah' => 'nullable|string|max:5',
+            'oldNamaKeluarga' => 'required|string|max:150', // Original NamaKeluarga for composite key lookup
+        ]);
+
+        // Check if karyawan exists
+        $karyawan = Karyawan::find($nik);
+        if (!$karyawan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Karyawan dengan NIK ' . $nik . ' tidak ditemukan.'
+            ], 404, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $oldNamaKeluarga = $request->oldNamaKeluarga;
+
+        // Check if record exists
+        $existing = DB::table('t_keluarga')
+            ->where('nik', $nik)
+            ->where('hubKeluarga', $hubKeluarga)
+            ->where('NamaKeluarga', $oldNamaKeluarga)
+            ->first();
+
+        if (!$existing) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data anggota keluarga tidak ditemukan.'
+            ], 404, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        // If hubKeluarga or NamaKeluarga changed, check for duplicate
+        if ($request->hubKeluarga !== $hubKeluarga || $request->NamaKeluarga !== $oldNamaKeluarga) {
+            // Check if the new combination already exists
+            // Since we're changing the composite key, we need to check if another record
+            // with the new combination exists (excluding the current record)
+            $duplicate = DB::table('t_keluarga')
+                ->where('nik', $nik)
+                ->where('hubKeluarga', $request->hubKeluarga)
+                ->where('NamaKeluarga', $request->NamaKeluarga)
+                ->where(function($query) use ($hubKeluarga, $oldNamaKeluarga) {
+                    // Exclude the current record: it has hubKeluarga=$hubKeluarga AND NamaKeluarga=$oldNamaKeluarga
+                    // So any record that doesn't match BOTH old values is a different record
+                    $query->where('hubKeluarga', '!=', $hubKeluarga)
+                          ->orWhere('NamaKeluarga', '!=', $oldNamaKeluarga);
+                })
+                ->exists();
+
+            if ($duplicate) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anggota keluarga dengan hubungan dan nama yang sama sudah ada.'
+                ], 422, [], JSON_UNESCAPED_UNICODE);
+            }
+        }
+
+        try {
+            // If composite key changed, delete old and insert new
+            if ($request->hubKeluarga !== $hubKeluarga || $request->NamaKeluarga !== $oldNamaKeluarga) {
+                DB::table('t_keluarga')
+                    ->where('nik', $nik)
+                    ->where('hubKeluarga', $hubKeluarga)
+                    ->where('NamaKeluarga', $oldNamaKeluarga)
+                    ->delete();
+
+                DB::table('t_keluarga')->insert([
+                    'nik' => $nik,
+                    'hubKeluarga' => $request->hubKeluarga,
+                    'NamaKeluarga' => $request->NamaKeluarga,
+                    'jenKelamin' => $request->jenKelamin,
+                    'temLahir' => $request->temLahir,
+                    'tglLahir' => $request->tglLahir,
+                    'golDarah' => $request->golDarah,
+                ]);
+            } else {
+                // Update existing record
+                DB::table('t_keluarga')
+                    ->where('nik', $nik)
+                    ->where('hubKeluarga', $hubKeluarga)
+                    ->where('NamaKeluarga', $oldNamaKeluarga)
+                    ->update([
+                        'jenKelamin' => $request->jenKelamin,
+                        'temLahir' => $request->temLahir,
+                        'tglLahir' => $request->tglLahir,
+                        'golDarah' => $request->golDarah,
+                    ]);
+            }
+
+            // Get the updated record
+            $keluarga = DB::table('t_keluarga')
+                ->where('nik', $nik)
+                ->where('hubKeluarga', $request->hubKeluarga)
+                ->where('NamaKeluarga', $request->NamaKeluarga)
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Anggota keluarga berhasil diperbarui.',
+                'keluarga' => $keluarga
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        } catch (\Exception $e) {
+            Log::error('Error updating family member: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat memperbarui anggota keluarga: ' . $e->getMessage()
+            ], 500, [], JSON_UNESCAPED_UNICODE);
+        }
+    }
+
+    /**
+     * Delete family member for a karyawan
+     */
+    public function deleteFamily(string $nik, string $hubKeluarga)
+    {
+        // Get NamaKeluarga from request (needed for composite key)
+        // Since we can't get it from URL, we'll need to modify the route or use request body
+        // For now, we'll use a query parameter or request body
+        $request = request();
+        $namaKeluarga = $request->input('NamaKeluarga') ?? $request->query('NamaKeluarga');
+
+        if (!$namaKeluarga) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Parameter NamaKeluarga diperlukan untuk menghapus data.'
+            ], 422, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        // Check if record exists
+        $existing = DB::table('t_keluarga')
+            ->where('nik', $nik)
+            ->where('hubKeluarga', $hubKeluarga)
+            ->where('NamaKeluarga', $namaKeluarga)
+            ->first();
+
+        if (!$existing) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data anggota keluarga tidak ditemukan.'
+            ], 404, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        try {
+            $deleted = DB::table('t_keluarga')
+                ->where('nik', $nik)
+                ->where('hubKeluarga', $hubKeluarga)
+                ->where('NamaKeluarga', $namaKeluarga)
+                ->delete();
+
+            if ($deleted > 0) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Anggota keluarga berhasil dihapus.'
+                ], 200, [], JSON_UNESCAPED_UNICODE);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menghapus anggota keluarga.'
+                ], 500, [], JSON_UNESCAPED_UNICODE);
+            }
+        } catch (\Exception $e) {
+            Log::error('Error deleting family member: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat menghapus anggota keluarga: ' . $e->getMessage()
+            ], 500, [], JSON_UNESCAPED_UNICODE);
+        }
+    }
+
+    /**
      * Update the specified resource in storage.
      */
     public function update(Request $request, string $id)
@@ -228,6 +483,11 @@ class KaryawanController extends Controller
         ]);
 
         $karyawan = Karyawan::findOrFail($id);
+        
+        // Simpan old values SEBELUM update (penting untuk logging)
+        // Gunakan getAttributes() dan buat deep copy dengan json_encode/decode untuk memastikan tidak terpengaruh perubahan
+        $oldValues = json_decode(json_encode($karyawan->getAttributes()), true);
+        
         $data = $request->all();
         $data['dtChange'] = now();
         $data['update_date'] = now();
@@ -255,6 +515,13 @@ class KaryawanController extends Controller
 
         $karyawan->update($data);
 
+        // Log activity dengan old values yang sudah disimpan
+        ActivityLogService::logUpdate(
+            $karyawan,
+            "Update data karyawan: {$karyawan->Nama} (NIK: {$karyawan->Nik})",
+            $oldValues
+        );
+
         // Catatan: Data keluarga tidak diupdate di sini karena tab Keluarga punya CRUD sendiri
         // Gunakan endpoint terpisah:
         // - POST /karyawan/{nik}/keluarga untuk menambah
@@ -280,6 +547,12 @@ class KaryawanController extends Controller
     {
         try {
             $karyawan = Karyawan::findOrFail($id);
+
+            // Log activity (sebelum delete, karena setelah delete data sudah tidak ada)
+            ActivityLogService::logDelete(
+                $karyawan,
+                "Menghapus karyawan: {$karyawan->Nama} (NIK: {$karyawan->Nik})"
+            );
 
             // Delete related family members using DB facade to avoid primary key issues
             try {
@@ -434,12 +707,24 @@ class KaryawanController extends Controller
             })->toArray();
         }
 
+        // Get pelatihan data (exclude Nik field, will be set to new NIK later)
+        $pelatihanData = [];
+        if (DB::getSchemaBuilder()->hasTable('t_pelatihan')) {
+            $pelatihanData = Pelatihan::where('Nik', $nik)->get()->map(function ($item) {
+                $data = $item->toArray();
+                unset($data['Nik']);
+                unset($data['id']);
+                return $data;
+            })->toArray();
+        }
+
         return response()->json([
             'success' => true,
             'karyawan' => $karyawanData,
             'keluarga' => $keluargaData,
             'pendidikan' => $pendidikanData,
-            'message' => 'Data karyawan, keluarga, dan pendidikan berhasil diambil untuk di-copy.'
+            'pelatihan' => $pelatihanData,
+            'message' => 'Data karyawan, keluarga, pendidikan, dan pelatihan berhasil diambil untuk di-copy.'
         ], 200, [], JSON_UNESCAPED_UNICODE);
     }
 
@@ -781,5 +1066,321 @@ class KaryawanController extends Controller
             'total' => $pendidikanLama->count(),
             'errors' => $errors
         ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Get pelatihan records for a karyawan
+     */
+    public function getPelatihan(string $nik)
+    {
+        try {
+            if (!DB::getSchemaBuilder()->hasTable('t_pelatihan')) {
+                Log::info("Table t_pelatihan tidak ditemukan untuk NIK: {$nik}");
+                return response()->json(['success' => true, 'pelatihan' => []]);
+            }
+
+            $pelatihan = Pelatihan::where('Nik', $nik)->get();
+
+            return response()->json([
+                'success' => true,
+                'pelatihan' => $pelatihan,
+                'count' => $pelatihan->count()
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        } catch (\Exception $e) {
+            Log::error("Error getting pelatihan for NIK {$nik}: " . $e->getMessage());
+            return response()->json([
+                'success' => true,
+                'pelatihan' => [],
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Add pelatihan record
+     */
+    public function addPelatihan(Request $request, string $nik)
+    {
+        if (!DB::getSchemaBuilder()->hasTable('t_pelatihan')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tabel t_pelatihan tidak ditemukan di database.'
+            ], 404);
+        }
+
+        $request->validate([
+            'nm_pelatihan' => 'required|string|max:150',
+            'penyelenggara' => 'nullable|string|max:150',
+            'lokasi' => 'nullable|string|max:150',
+            'tg_pelatihan' => 'nullable|date',
+            'tg_selesai' => 'nullable|date|after_or_equal:tg_pelatihan',
+            'lama' => 'nullable|integer|min:0',
+            'sertifikat' => 'nullable|boolean',
+            'keterangan' => 'nullable|string'
+        ]);
+
+        $karyawan = Karyawan::find($nik);
+        if (!$karyawan) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Karyawan dengan NIK ' . $nik . ' tidak ditemukan.'
+            ], 404);
+        }
+
+        $exists = Pelatihan::where('Nik', $nik)
+            ->where('nm_pelatihan', $request->nm_pelatihan)
+            ->exists();
+
+        if ($exists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pelatihan dengan nama yang sama sudah ada untuk karyawan ini.'
+            ], 422, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        DB::table('t_pelatihan')->insert([
+            'Nik' => $nik,
+            'nm_pelatihan' => $request->nm_pelatihan,
+            'penyelenggara' => $request->penyelenggara,
+            'lokasi' => $request->lokasi,
+            'tg_pelatihan' => $request->tg_pelatihan,
+            'tg_selesai' => $request->tg_selesai,
+            'lama' => $request->lama,
+            'Sertifikasi' => $request->sertifikat ? 1 : 0,
+            'Keterangan' => $request->keterangan,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Data pelatihan berhasil ditambahkan.',
+            'pelatihan' => DB::table('t_pelatihan')
+                ->where('Nik', $nik)
+                ->where('nm_pelatihan', $request->nm_pelatihan)
+                ->first()
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Update pelatihan record
+     */
+    public function updatePelatihan(Request $request, string $nik, string $nm_pelatihan_lama)
+    {
+        // Decode nama pelatihan jika mengandung spasi/karakter encoded
+        $nm_pelatihan_lama = urldecode($nm_pelatihan_lama);
+        if (!DB::getSchemaBuilder()->hasTable('t_pelatihan')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tabel t_pelatihan tidak ditemukan di database.'
+            ], 404);
+        }
+
+        $request->validate([
+            'nm_pelatihan' => 'required|string|max:150',
+            'penyelenggara' => 'nullable|string|max:150',
+            'lokasi' => 'nullable|string|max:150',
+            'tg_pelatihan' => 'nullable|date',
+            'tg_selesai' => 'nullable|date|after_or_equal:tg_pelatihan',
+            'lama' => 'nullable|integer|min:0',
+            'sertifikat' => 'nullable|boolean',
+            'keterangan' => 'nullable|string'
+        ]);
+
+        // Cek duplikasi jika nama pelatihan berubah
+        $exists = Pelatihan::where('Nik', $nik)
+            ->where('nm_pelatihan', $request->nm_pelatihan)
+            ->where('nm_pelatihan', '!=', $nm_pelatihan_lama)
+            ->exists();
+        if ($exists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pelatihan dengan nama yang sama sudah ada untuk karyawan ini.'
+            ], 422, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $updated = DB::table('t_pelatihan')
+            ->where('Nik', $nik)
+            ->where('nm_pelatihan', $nm_pelatihan_lama)
+            ->update([
+                'nm_pelatihan' => $request->nm_pelatihan,
+                'penyelenggara' => $request->penyelenggara,
+                'lokasi' => $request->lokasi,
+                'tg_pelatihan' => $request->tg_pelatihan,
+                'tg_selesai' => $request->tg_selesai,
+                'lama' => $request->lama,
+                'Sertifikasi' => $request->sertifikat ? 1 : 0,
+                'Keterangan' => $request->keterangan,
+            ]);
+
+        if (!$updated) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data pelatihan tidak ditemukan.'
+            ], 404, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $pelatihanBaru = DB::table('t_pelatihan')
+            ->where('Nik', $nik)
+            ->where('nm_pelatihan', $request->nm_pelatihan)
+            ->first();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Data pelatihan berhasil diperbarui.',
+            'pelatihan' => $pelatihanBaru
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Delete pelatihan record
+     */
+    public function deletePelatihan(string $nik, string $nm_pelatihan)
+    {
+        // Decode nama pelatihan jika mengandung spasi/karakter encoded
+        $nm_pelatihan = urldecode($nm_pelatihan);
+        if (!DB::getSchemaBuilder()->hasTable('t_pelatihan')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tabel t_pelatihan tidak ditemukan di database.'
+            ], 404);
+        }
+
+        $deleted = DB::table('t_pelatihan')
+            ->where('Nik', $nik)
+            ->where('nm_pelatihan', $nm_pelatihan)
+            ->delete();
+
+        if ($deleted === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data pelatihan tidak ditemukan.'
+            ], 404, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Data pelatihan berhasil dihapus.'
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Copy pelatihan data from old NIK to new NIK
+     */
+    public function copyPelatihan(Request $request)
+    {
+        $request->validate([
+            'nik_lama' => 'required|string|exists:m_karyawan,Nik',
+            'nik_baru' => 'required|string|exists:m_karyawan,Nik',
+        ]);
+
+        if (!DB::getSchemaBuilder()->hasTable('t_pelatihan')) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Tabel t_pelatihan tidak ditemukan, skip copy data pelatihan.',
+                'copied' => 0
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $nikLama = $request->nik_lama;
+        $nikBaru = $request->nik_baru;
+
+        $pelatihanLama = Pelatihan::where('Nik', $nikLama)->get();
+        if ($pelatihanLama->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Tidak ada data pelatihan untuk di-copy.',
+                'copied' => 0
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $copied = 0;
+        $errors = [];
+
+        foreach ($pelatihanLama as $item) {
+            try {
+                $exists = Pelatihan::where('Nik', $nikBaru)
+                    ->where('training_name', $item->training_name)
+                    ->exists();
+                if ($exists) {
+                    continue;
+                }
+
+                Pelatihan::create([
+                    'Nik' => $nikBaru,
+                    'nm_pelatihan' => $item->nm_pelatihan,
+                    'penyelenggara' => $item->penyelenggara,
+                    'lokasi' => $item->lokasi,
+                    'tg_pelatihan' => $item->tg_pelatihan,
+                    'tg_selesai' => $item->tg_selesai,
+                    'sertifikat' => $item->sertifikat,
+                    'keterangan' => $item->keterangan,
+                    'dtCreate' => now(),
+                    'dtChange' => now(),
+                ]);
+                $copied++;
+            } catch (\Exception $e) {
+                $errors[] = [
+                    'training_name' => $item->training_name,
+                    'error' => $e->getMessage()
+                ];
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Data pelatihan berhasil di-copy. {$copied} record berhasil di-copy.",
+            'copied' => $copied,
+            'total' => $pelatihanLama->count(),
+            'errors' => $errors
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Search karyawan by NIK or Nama (for autocomplete)
+     * Returns active employees matching the search query
+     */
+    public function search(Request $request)
+    {
+        try {
+            $query = $request->get('q', '');
+            $limit = $request->get('limit', 20);
+
+            if (empty(trim($query))) {
+                return response()->json([
+                    'success' => true,
+                    'karyawans' => []
+                ], 200, [], JSON_UNESCAPED_UNICODE);
+            }
+
+            $karyawans = Karyawan::where('vcAktif', '1')
+                ->whereNull('Tgl_Berhenti')
+                ->where(function ($q) use ($query) {
+                    $q->where('Nik', 'LIKE', '%' . $query . '%')
+                      ->orWhere('Nama', 'LIKE', '%' . $query . '%');
+                })
+                ->with(['divisi', 'bagian'])
+                ->orderBy('Nik')
+                ->limit($limit)
+                ->get()
+                ->map(function ($karyawan) {
+                    return [
+                        'nik' => $karyawan->Nik ?? '',
+                        'nama' => $karyawan->Nama ?? '',
+                        'divisi' => $karyawan->divisi->vcNamaDivisi ?? ($karyawan->Divisi ?? '-'),
+                        'bagian' => $karyawan->bagian->vcNamaBagian ?? '-',
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'karyawans' => $karyawans
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        } catch (\Exception $e) {
+            \Log::error('Error in KaryawanController@search: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error searching karyawan: ' . $e->getMessage(),
+                'karyawans' => []
+            ], 500, [], JSON_UNESCAPED_UNICODE);
+        }
     }
 }
