@@ -33,11 +33,22 @@
                     <div class="col-md-4">
                         <label for="search" class="form-label">NIK / Nama</label>
                         <div class="d-flex gap-2 align-items-start">
-                            <input type="text" class="form-control" id="search" name="search" value="{{ request('search') }}" placeholder="Cari NIK atau Nama (pisahkan dengan koma)" style="height: 38px;">
+                            <div class="position-relative flex-grow-1">
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="search" 
+                                       name="search" 
+                                       value="{{ request('search') }}" 
+                                       placeholder="Cari NIK atau Nama (pisahkan dengan koma)" 
+                                       autocomplete="off"
+                                       style="height: 38px;">
+                                <div id="searchAutocomplete" class="autocomplete-dropdown" style="display: none;"></div>
+                            </div>
                             <button type="submit" class="btn btn-primary shadow-sm" style="height: 38px;">
                                 <i class="fas fa-eye me-2"></i>Preview
                             </button>
                         </div>
+                        <small class="text-muted">Ketik NIK atau nama karyawan untuk mencari (bisa multiple, pisahkan dengan koma)</small>
                     </div>
                 </div>
             </form>
@@ -72,9 +83,13 @@
                         @php
                         $record = $item['record'];
                         $periodeSebelumnya = $item['periode_sebelumnya'] ?? null;
+                        $jamLibur4x = max(0, (float)($record->decJamLemburLibur3 ?? 0) - 1);
+                        $jamJ4 = (float)($record->decJamLemburKerja4 ?? 0) + $jamLibur4x;
+                        $nominalJ4 = (float)($record->decTotallembur4 ?? 0);
+                        $totalNominalLembur = (float)($record->decTotallembur1 ?? 0) + (float)($record->decTotallembur2 ?? 0) + (float)($record->decTotallembur3 ?? 0) + $nominalJ4;
                         $totalPenerimaan = $record->decGapok + $record->decUangMakan + $record->decTransport +
-                        $record->decPremi + $record->decTotallembur1 + $record->decTotallembur2 +
-                        $record->decTotallembur3 + $record->decRapel;
+                        $record->decPremi + $totalNominalLembur +
+                        $record->decRapel + (float)($record->decTunjanganJabatan ?? 0);
                         $totalPotongan = $record->decPotonganBPJSKes + $record->decPotonganBPJSJHT +
                         $record->decPotonganBPJSJP + $record->decIuranSPN +
                         $record->decPotonganKoperasi + $record->decPotonganBPR +
@@ -155,18 +170,18 @@
                                     K: {{ number_format($record->decJamLemburKerja, 1) }} |
                                     L: {{ number_format($record->decJamLemburLibur, 1) }}
                                 </small>
-                                @if($record->decJamLemburKerja1 > 0 || $record->decJamLemburKerja2 > 0 || $record->decJamLemburKerja3 > 0 || $record->decJamLemburLibur2 > 0 || $record->decJamLemburLibur3 > 0)
+                                @if($record->decJamLemburKerja1 > 0 || $record->decJamLemburKerja2 > 0 || $record->decJamLemburKerja3 > 0 || ($record->decJamLemburKerja4 ?? 0) > 0 || $record->decJamLemburLibur2 > 0 || $record->decJamLemburLibur3 > 0)
                                 <div class="mt-1">
                                     <small>
                                         J1: {{ number_format($record->decJamLemburKerja1, 1) }} |
                                         J2: {{ number_format($record->decJamLemburKerja2 + $record->decJamLemburLibur2, 1) }} |
-                                        J3: {{ number_format($record->decJamLemburKerja3 + $record->decJamLemburLibur3, 1) }}
+                                        J3: {{ number_format($record->decJamLemburKerja3 + min(1, (float)($record->decJamLemburLibur3 ?? 0)), 1) }}@if($jamJ4 > 0) | J4: {{ number_format($jamJ4, 1) }}@endif
                                     </small>
                                 </div>
                                 @endif
                                 <div class="mt-1">
                                     <small class="text-success">
-                                        Rp. {{ number_format($record->decTotallembur1 + $record->decTotallembur2 + $record->decTotallembur3, 0, ',', '.') }}
+                                        Total lembur: Rp. {{ number_format($totalNominalLembur, 0, ',', '.') }}
                                     </small>
                                 </div>
                             </td>
@@ -190,7 +205,7 @@
                                         <span>Rp. {{ number_format($record->decPremi ?? 0, 0, ',', '.') }}</span>
                                     </div>
                                     @endif
-                                    @if($record->decTotallembur1 + $record->decTotallembur2 + $record->decTotallembur3 > 0)
+                                    @if($totalNominalLembur > 0)
                                     @if($record->decTotallembur1 > 0)
                                     <div style="display: flex; justify-content: space-between; gap: 8px; padding-left: 12px;">
                                         <span><small>Lembur J1:</small></span>
@@ -209,15 +224,27 @@
                                         <span style="margin-left: -35px;"><small>Rp. {{ number_format($record->decTotallembur3, 0, ',', '.') }}</small></span>
                                     </div>
                                     @endif
+                                    @if($nominalJ4 > 0)
+                                    <div style="display: flex; justify-content: space-between; gap: 8px; padding-left: 12px;">
+                                        <span><small>Lembur J4:</small></span>
+                                        <span style="margin-left: -35px;"><small>Rp. {{ number_format($nominalJ4, 0, ',', '.') }}</small></span>
+                                    </div>
+                                    @endif
                                     <div style="display: flex; justify-content: space-between; gap: 8px; margin-top: 2px;">
                                         <span>Lembur Total:</span>
-                                        <span>Rp. {{ number_format($record->decTotallembur1 + $record->decTotallembur2 + $record->decTotallembur3, 0, ',', '.') }}</span>
+                                        <span>Rp. {{ number_format($totalNominalLembur, 0, ',', '.') }}</span>
                                     </div>
                                     @endif
                                     @if($record->decRapel > 0)
                                     <div style="display: flex; justify-content: space-between; gap: 8px;">
                                         <span>Rapel:</span>
                                         <span>Rp. {{ number_format($record->decRapel, 0, ',', '.') }}</span>
+                                    </div>
+                                    @endif
+                                    @if(($record->decTunjanganJabatan ?? 0) > 0)
+                                    <div style="display: flex; justify-content: space-between; gap: 8px;">
+                                        <span>Tunj. Jabatan:</span>
+                                        <span>Rp. {{ number_format($record->decTunjanganJabatan, 0, ',', '.') }}</span>
                                     </div>
                                     @endif
                                 </div>
@@ -303,7 +330,7 @@
                         </tr>
                         @empty
                         <tr>
-                            <td colspan="13" class="text-center py-4">
+                            <td colspan="14" class="text-center py-4">
                                 <i class="fas fa-inbox fa-2x text-muted mb-2 d-block"></i>
                                 <span class="text-muted">Tidak ada data gaji yang ditemukan</span>
                             </td>
@@ -328,3 +355,186 @@
     </div>
 </div>
 @endsection
+
+@push('styles')
+<style>
+    .autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ced4da;
+        border-radius: 0.375rem;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        margin-top: 2px;
+    }
+    .autocomplete-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.2s;
+    }
+    .autocomplete-item:hover,
+    .autocomplete-item.active {
+        background-color: #f8f9fa;
+    }
+    .autocomplete-item:last-child {
+        border-bottom: none;
+    }
+    .autocomplete-item strong {
+        color: #0d6efd;
+    }
+    .autocomplete-item small {
+        color: #6c757d;
+        display: block;
+        margin-top: 0.25rem;
+    }
+</style>
+@endpush
+
+@push('scripts')
+<script>
+    let searchTimeout;
+    let selectedIndex = -1;
+    const searchInput = document.getElementById('search');
+    const autocompleteDiv = document.getElementById('searchAutocomplete');
+    // Data karyawan untuk pencarian lokal (dibatasi di controller)
+    const karyawanList = @json($karyawanList);
+
+    // Fungsi untuk mendapatkan nilai NIK dari input (handle format "NIK - Nama" atau multiple dengan koma)
+    function getCurrentSearchTerms() {
+        const value = searchInput.value.trim();
+        if (!value) return [];
+        return value.split(',').map(term => term.trim()).filter(term => term.length > 0);
+    }
+
+    // Fungsi untuk mendapatkan term yang sedang diketik (term terakhir)
+    function getCurrentTypingTerm() {
+        const value = searchInput.value.trim();
+        if (!value) return '';
+        const terms = value.split(',');
+        return terms[terms.length - 1].trim();
+    }
+
+    // Autocomplete search (pencarian lokal, tanpa fetch)
+    searchInput.addEventListener('input', function() {
+        const currentTerm = getCurrentTypingTerm().toLowerCase();
+
+        clearTimeout(searchTimeout);
+
+        if (currentTerm.length === 0) {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+            return;
+        }
+
+        if (currentTerm.length < 2) {
+            autocompleteDiv.style.display = 'none';
+            return;
+        }
+
+        // Debounce 200ms
+        searchTimeout = setTimeout(() => {
+            const results = karyawanList.filter(k => k.search.includes(currentTerm)).slice(0, 20);
+            displayAutocomplete(results);
+        }, 200);
+    });
+
+    // Display autocomplete results
+    function displayAutocomplete(karyawans) {
+        if (!karyawans || karyawans.length === 0) {
+            autocompleteDiv.innerHTML = '<div class="autocomplete-item">Tidak ada karyawan ditemukan</div>';
+            autocompleteDiv.style.display = 'block';
+            return;
+        }
+
+        autocompleteDiv.innerHTML = '';
+        karyawans.forEach((karyawan, index) => {
+            if (!karyawan || !karyawan.nik) return; // Skip invalid data
+            
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.innerHTML = `
+                <strong>${karyawan.nik || ''}</strong> - ${karyawan.nama || ''}
+                <small>Divisi: ${karyawan.divisi || '-'} | Bagian: ${karyawan.bagian || '-'}</small>
+            `;
+            item.addEventListener('click', function() {
+                selectKaryawan(karyawan);
+            });
+            autocompleteDiv.appendChild(item);
+        });
+        autocompleteDiv.style.display = 'block';
+        selectedIndex = -1;
+    }
+
+    // Select karyawan from autocomplete
+    function selectKaryawan(karyawan) {
+        const currentTerms = getCurrentSearchTerms();
+        const currentTerm = getCurrentTypingTerm();
+        
+        // Hapus term terakhir yang sedang diketik
+        currentTerms.pop();
+        
+        // Tambahkan karyawan yang dipilih
+        const newTerm = `${karyawan.nik} - ${karyawan.nama}`;
+        currentTerms.push(newTerm);
+        
+        // Update input value
+        searchInput.value = currentTerms.join(', ');
+        autocompleteDiv.style.display = 'none';
+        selectedIndex = -1;
+        
+        // Focus kembali ke input
+        searchInput.focus();
+    }
+
+    // Hide autocomplete when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!searchInput.contains(e.target) && !autocompleteDiv.contains(e.target)) {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        }
+    });
+
+    // Handle keyboard navigation
+    searchInput.addEventListener('keydown', function(e) {
+        const items = autocompleteDiv.querySelectorAll('.autocomplete-item');
+        
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (autocompleteDiv.style.display === 'none') return;
+            selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+            updateSelectedItem(items, selectedIndex);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (autocompleteDiv.style.display === 'none') return;
+            selectedIndex = Math.max(selectedIndex - 1, -1);
+            updateSelectedItem(items, selectedIndex);
+        } else if (e.key === 'Enter' && selectedIndex >= 0 && items[selectedIndex]) {
+            e.preventDefault();
+            items[selectedIndex].click();
+        } else if (e.key === 'Escape') {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        } else if (e.key === 'Tab') {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        }
+    });
+
+    function updateSelectedItem(items, index) {
+        items.forEach((item, i) => {
+            if (i === index) {
+                item.classList.add('active');
+                item.scrollIntoView({ block: 'nearest' });
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+</script>
+@endpush

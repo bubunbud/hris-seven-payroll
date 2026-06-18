@@ -89,7 +89,6 @@ class TarikDataAbsensiController extends Controller
             // Proses insert/update data ke database lokal
             $inserted = 0;
             $updated = 0;
-            $skipped = 0;
             $errors = [];
 
             DB::beginTransaction();
@@ -111,65 +110,21 @@ class TarikDataAbsensiController extends Controller
                     }
 
                     if ($existing) {
-                        // Data sudah ada, cek apakah perlu update
-                        // Update hanya jika dtJamMasuk atau dtJamKeluar masih kosong di database lokal
-                        // DAN data dari server tidak kosong
-                        $needUpdate = false;
+                        // Data sudah ada, selalu update dengan data baru dari server (sinkronisasi)
+                        $updateData = ['dtChange' => Carbon::now()];
 
-                        // Cek apakah dtJamMasuk ada di field yang dipilih dan perlu diupdate
-                        if (in_array('dtJamMasuk', $fields)) {
-                            $existingJamMasuk = $existing->dtJamMasuk ?? null;
-                            $remoteJamMasuk = $data['dtJamMasuk'] ?? null;
-
-                            // Update jika di lokal kosong dan di server ada data
-                            if (empty($existingJamMasuk) && !empty($remoteJamMasuk)) {
-                                $needUpdate = true;
+                        // Update semua field yang dipilih dari data server
+                        foreach ($fields as $field) {
+                            if (isset($data[$field])) {
+                                $updateData[$field] = $data[$field];
                             }
                         }
 
-                        // Cek apakah dtJamKeluar ada di field yang dipilih dan perlu diupdate
-                        if (in_array('dtJamKeluar', $fields)) {
-                            $existingJamKeluar = $existing->dtJamKeluar ?? null;
-                            $remoteJamKeluar = $data['dtJamKeluar'] ?? null;
-
-                            // Update jika di lokal kosong dan di server ada data
-                            if (empty($existingJamKeluar) && !empty($remoteJamKeluar)) {
-                                $needUpdate = true;
-                            }
-                        }
-
-                        if ($needUpdate) {
-                            // Update data yang sudah ada - hanya field yang perlu diupdate
-                            $updateData = ['dtChange' => Carbon::now()];
-
-                            // Hanya update field yang dipilih dan perlu diupdate
-                            foreach ($fields as $field) {
-                                // Untuk dtJamMasuk dan dtJamKeluar, hanya update jika kosong di lokal
-                                if ($field === 'dtJamMasuk') {
-                                    if (empty($existing->dtJamMasuk) && !empty($data['dtJamMasuk'])) {
-                                        $updateData[$field] = $data[$field];
-                                    }
-                                } elseif ($field === 'dtJamKeluar') {
-                                    if (empty($existing->dtJamKeluar) && !empty($data['dtJamKeluar'])) {
-                                        $updateData[$field] = $data[$field];
-                                    }
-                                } else {
-                                    // Untuk field lain, selalu update jika ada di data
-                                    if (isset($data[$field])) {
-                                        $updateData[$field] = $data[$field];
-                                    }
-                                }
-                            }
-
-                            DB::table('t_absen')
-                                ->where('dtTanggal', $remoteRow->dtTanggal)
-                                ->where('vcNik', $remoteRow->vcNik)
-                                ->update($updateData);
-                            $updated++;
-                        } else {
-                            // Skip jika data sudah lengkap atau tidak ada yang perlu diupdate
-                            $skipped++;
-                        }
+                        DB::table('t_absen')
+                            ->where('dtTanggal', $remoteRow->dtTanggal)
+                            ->where('vcNik', $remoteRow->vcNik)
+                            ->update($updateData);
+                        $updated++;
                     } else {
                         // Insert data baru
                         $data['dtCreate'] = Carbon::now();
@@ -197,7 +152,7 @@ class TarikDataAbsensiController extends Controller
             // Disconnect dari remote database
             DB::purge('remote_mysql');
 
-            $message = "Data berhasil ditarik! Insert: {$inserted}, Update: {$updated}, Skip: {$skipped}";
+            $message = "Data berhasil ditarik! Insert: {$inserted}, Update: {$updated}";
             if (!empty($errors)) {
                 $message .= " (Error: " . count($errors) . " record)";
             }
@@ -208,7 +163,6 @@ class TarikDataAbsensiController extends Controller
                 'data' => [
                     'inserted' => $inserted,
                     'updated' => $updated,
-                    'skipped' => $skipped,
                     'total' => $remoteData->count(),
                     'errors' => count($errors),
                     'error_details' => $errors

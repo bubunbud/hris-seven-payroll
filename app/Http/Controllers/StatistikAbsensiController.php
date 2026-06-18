@@ -20,25 +20,104 @@ class StatistikAbsensiController extends Controller
 
         $startDate = $request->get('dari_tanggal', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('sampai_tanggal', Carbon::now()->endOfMonth()->format('Y-m-d'));
+        
+        // Get filter parameters
+        $search = $request->get('search'); // NIK / Nama (gabungan)
+        // Backward compatibility: jika masih ada parameter nik, gunakan itu
         $nik = $request->get('nik');
+        if (!$search && $nik) {
+            $search = $nik;
+        }
         $group = $request->get('group');
+
+        // Load karyawan aktif untuk autocomplete lokal
+        $karyawans = Karyawan::where('vcAktif', '1')
+            ->whereNull('Tgl_Berhenti')
+            ->with(['divisi', 'bagian'])
+            ->orderBy('Nama')
+            ->get(['Nik', 'Nama', 'Divisi', 'vcKodeBagian']);
+
+        // Siapkan data sederhana untuk frontend (hindari logic berat di Blade)
+        $karyawanList = $karyawans->map(function ($k) {
+            $divisiNama = '-';
+            if ($k->divisi && isset($k->divisi->vcNamaDivisi)) {
+                $divisiNama = $k->divisi->vcNamaDivisi;
+            } elseif ($k->Divisi) {
+                $divisiNama = $k->Divisi;
+            }
+
+            $bagianNama = '-';
+            if ($k->bagian && isset($k->bagian->vcNamaBagian)) {
+                $bagianNama = $k->bagian->vcNamaBagian;
+            }
+
+            return [
+                'nik' => $k->Nik ?: '',
+                'nama' => $k->Nama ?: '',
+                'divisi' => $divisiNama,
+                'bagian' => $bagianNama,
+                'search' => strtolower(($k->Nik ?: '') . ' ' . ($k->Nama ?: '')),
+            ];
+        })->values();
 
         // Filter karyawan scope
         $karyawanQuery = Karyawan::query()->where('vcAktif', '1');
-        if ($nik) {
-            $karyawanQuery->where('Nik', 'like', "%$nik%");
+        
+        // Apply search filter (multi-term support)
+        if ($search) {
+            $searchTerms = preg_split('/,\s*/', trim($search));
+            $karyawanQuery->where(function ($q) use ($searchTerms) {
+                foreach ($searchTerms as $term) {
+                    if (!empty(trim($term))) {
+                        $term = trim($term);
+                        // Jika format "NIK - Nama", ambil NIK saja
+                        if (strpos($term, ' - ') !== false) {
+                            $term = explode(' - ', $term)[0];
+                        }
+                        $q->orWhere('Nik', 'like', '%' . $term . '%')
+                            ->orWhere('Nama', 'like', '%' . $term . '%');
         }
+                }
+            });
+        }
+        
         if ($group) {
             $karyawanQuery->where('Group_pegawai', $group);
         }
         $nikList = $karyawanQuery->pluck('Nik');
-        // Jika filter NIK diisi, pakai pencocokan eksak agar agregasi hanya untuk NIK tsb.
-        if ($nik) {
-            $nikList = collect([$nik]);
+        // Jika filter search diisi, pakai pencocokan eksak agar agregasi hanya untuk NIK tsb.
+        if ($search) {
+            // Extract NIK dari search terms
+            $searchTerms = preg_split('/,\s*/', trim($search));
+            $niksFromSearch = [];
+            foreach ($searchTerms as $term) {
+                $term = trim($term);
+                if (strpos($term, ' - ') !== false) {
+                    $niksFromSearch[] = explode(' - ', $term)[0];
+                } else {
+                    // Coba cari sebagai NIK
+                    $foundKaryawan = Karyawan::where('Nik', 'like', '%' . $term . '%')->first();
+                    if ($foundKaryawan) {
+                        $niksFromSearch[] = $foundKaryawan->Nik;
+                    }
+                }
+            }
+            if (!empty($niksFromSearch)) {
+                $nikList = collect($niksFromSearch);
+            }
         }
         $selectedNama = null;
-        if ($nik) {
-            $selectedNama = Karyawan::where('Nik', $nik)->value('Nama');
+        if ($search) {
+            // Ambil nama dari term pertama
+            $firstTerm = trim(explode(',', $search)[0]);
+            if (strpos($firstTerm, ' - ') !== false) {
+                $selectedNama = explode(' - ', $firstTerm)[1];
+            } else {
+                $foundKaryawan = Karyawan::where('Nik', 'like', '%' . $firstTerm . '%')->orWhere('Nama', 'like', '%' . $firstTerm . '%')->first();
+                if ($foundKaryawan) {
+                    $selectedNama = $foundKaryawan->Nama;
+                }
+            }
         }
 
         // Total hari kerja (exclude Sabtu/Minggu & hari libur nasional)
@@ -130,38 +209,9 @@ class StatistikAbsensiController extends Controller
 
         $izinKeluar = $izinQuery->get();
 
-        // Hitung total jam izin keluar untuk izin pribadi (Z003 + Z004)
-        $totalJamIzinKeluar = 0.0;
-        foreach ($izinKeluar as $iz) {
-            // Hitung jika vcKodeIzin = 'Z003' (izin keluar pribadi) atau 'Z004' (izin masuk siang pribadi)
-            if (!in_array($iz->vcKodeIzin, ['Z003', 'Z004'], true)) {
-                continue;
-            }
-
-            if (!$iz->dtDari) continue;
-            $tanggal = $iz->dtTanggal instanceof Carbon ? $iz->dtTanggal->copy() : Carbon::parse($iz->dtTanggal);
-            $dari = $tanggal->copy()->setTimeFromTimeString((string) $iz->dtDari);
-
-            // Tentukan waktu sampai: jika kosong atau 00:00 gunakan jam pulang shift
-            $rawSampai = $iz->dtSampai ? (string) $iz->dtSampai : null;
-            $isZero = $rawSampai && (substr($rawSampai, 0, 5) === '00:00');
-            $shiftPulang = $iz->shift_pulang ? substr((string) $iz->shift_pulang, 0, 5) : null;
-            $sampaiClock = (!$rawSampai || $isZero) ? $shiftPulang : substr($rawSampai, 0, 5);
-            if (!$sampaiClock) continue; // tidak bisa tentukan akhir
-
-            $sampai = $tanggal->copy()->setTimeFromTimeString($sampaiClock);
-            if ($sampai->lessThan($dari)) {
-                $sampai->addDay();
-            }
-            $menit = $dari->diffInMinutes($sampai, true);
-            // Kurangi 1 jam jika interval melewati jam istirahat 12:00-13:00
-            $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
-            $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
-            if ($dari->lt($lunchEnd) && $sampai->gt($lunchStart)) {
-                $menit = max(0, $menit - 60);
-            }
-            $totalJamIzinKeluar += round($menit / 60, 2);
-        }
+        // Total jam izin keluar akan dihitung setelah semua komponen selesai
+        // Logika baru: totalJamIzinKeluar = totalJamMasukSiang + totalJamIzinKeluarKomplek + totalJamIzinPulangCepat
+        // Perhitungan lama dihapus karena akan dihitung dari komponen-komponen di bawah
 
         // Telat & Pulang Cepat (aturan dasar): bandingkan dengan jam shift karyawan jika ada
         // Optimasi: gunakan join langsung untuk menghindari N+1 query
@@ -210,8 +260,8 @@ class StatistikAbsensiController extends Controller
                 $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
                 $tShiftMasuk = $tanggal->copy()->setTimeFromTimeString($shiftMasuk);
                 if ($tMasuk->greaterThan($tShiftMasuk)) {
+                    // Telat 1 menit sudah dianggap telat (tidak ada toleransi)
                     $selisih = $tShiftMasuk->diffInMinutes($tMasuk);
-                    if ($selisih > 1) {
                         $telat++;
                         $telatPerNik[$ab->vcNik] = ($telatPerNik[$ab->vcNik] ?? 0) + 1;
                         // Simpan debug telat
@@ -225,7 +275,6 @@ class StatistikAbsensiController extends Controller
                             'shiftPulang' => $shiftPulang,
                             'menitTelat' => $selisih,
                         ];
-                    }
                 }
             }
 
@@ -250,7 +299,25 @@ class StatistikAbsensiController extends Controller
                 }
             }
 
-            // Hitung surplus/deficit (hanya jika ada jam masuk dan keluar lengkap)
+            // Hitung Total Jam Kerja Aktual: akumulasi jam kerja karyawan (jam pulang - jam masuk)
+            // Logika baru: hanya hitung jika ada jam masuk dan jam keluar (tidak perlu shift)
+            if ($jamMasuk && $jamKeluar) {
+                $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
+                $tKeluar = $tanggal->copy()->setTimeFromTimeString($jamKeluar);
+                if ($tKeluar->lessThan($tMasuk)) {
+                    $tKeluar->addDay();
+                }
+                $menitAktual = $tMasuk->diffInMinutes($tKeluar, true);
+                // Kurangi 1 jam jika interval melewati jam istirahat 12:00-13:00
+                $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
+                $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
+                if ($tMasuk->lt($lunchEnd) && $tKeluar->gt($lunchStart)) {
+                    $menitAktual = max(0, $menitAktual - 60);
+                }
+                $totalJamKerjaAktual += round($menitAktual / 60, 2);
+            }
+
+            // Hitung surplus/deficit (hanya jika ada jam masuk dan keluar lengkap + shift)
             if ($jamMasuk && $jamKeluar && $shiftMasuk && $shiftPulang) {
                 $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
                 $tKeluar = $tanggal->copy()->setTimeFromTimeString($jamKeluar);
@@ -275,7 +342,6 @@ class StatistikAbsensiController extends Controller
                 }
 
                 $totalJamStandarKerja += round($menitStandar / 60, 2);
-                $totalJamKerjaAktual += round($menitAktual / 60, 2);
 
                 $selisihMenit = $menitAktual - $menitStandar;
                 $selisihJam = round($selisihMenit / 60, 2);
@@ -549,11 +615,32 @@ class StatistikAbsensiController extends Controller
                     $izinKeluarKomplekJamPerNik[$iz->vcNik] = ($izinKeluarKomplekJamPerNik[$iz->vcNik] ?? 0) + $jamIzin;
                 }
 
-                // PC (Pulang Cepat): Tipe = "Pulang Cepat" (sama seperti Rekapitulasi Absen All)
+                // PC (Pulang Cepat): Tipe = "Pulang Cepat"
+                // Logika: Jam Pulang Shift - Jam Sampai (dari izin)
                 if ($tipeIzin === 'Pulang Cepat') {
                     $pulangCepatPerNikIzin[$iz->vcNik] = ($pulangCepatPerNikIzin[$iz->vcNik] ?? 0) + 1;
+                    
+                    // Hitung jam izin pulang cepat: Jam Pulang Shift - Jam Sampai
+                    $jamPulangCepat = 0.0;
+                    $shiftPulang = $iz->shift_pulang ? substr((string) $iz->shift_pulang, 0, 5) : null;
+                    $jamSampai = $iz->dtSampai ? substr((string) $iz->dtSampai, 0, 5) : null;
+                    
+                    if ($shiftPulang && $jamSampai) {
+                        $tanggal = $iz->dtTanggal instanceof Carbon ? $iz->dtTanggal->copy() : Carbon::parse($iz->dtTanggal);
+                        $tShiftPulang = $tanggal->copy()->setTimeFromTimeString($shiftPulang);
+                        $tSampai = $tanggal->copy()->setTimeFromTimeString($jamSampai);
+                        
+                        // Jika jam sampai lebih besar dari jam pulang shift, berarti melewati tengah malam (tidak mungkin untuk pulang cepat)
+                        // Tapi untuk aman, kita hitung selisihnya
+                        if ($tSampai->lessThan($tShiftPulang)) {
+                            // Hitung selisih dalam menit, lalu konversi ke jam
+                            $menit = $tSampai->diffInMinutes($tShiftPulang, true);
+                            $jamPulangCepat = round($menit / 60, 2);
+                        }
+                    }
+                    
                     // Total jam izin pulang cepat (PC)
-                    $izinPulangCepatJamPerNik[$iz->vcNik] = ($izinPulangCepatJamPerNik[$iz->vcNik] ?? 0) + $jamIzin;
+                    $izinPulangCepatJamPerNik[$iz->vcNik] = ($izinPulangCepatJamPerNik[$iz->vcNik] ?? 0) + $jamPulangCepat;
                 }
             }
         }
@@ -594,14 +681,30 @@ class StatistikAbsensiController extends Controller
             ->orderBy('Group_pegawai')
             ->pluck('Group_pegawai');
 
-        // Rata-rata jam izin keluar per karyawan pada scope filter
-        $jumlahKaryawan = max(1, $nikList->count());
-        $rataJamIzinKeluar = round($totalJamIzinKeluar / $jumlahKaryawan, 2);
+        // Rata-rata jam izin keluar akan dihitung setelah totalJamIzinKeluar dihitung dengan logika baru
 
         // Debug Tidak Masuk untuk NIK terpilih
         $debugTidakMasuk = [];
         foreach ($tidakMasuk as $tm) {
-            if ($nik && $tm->vcNik !== $nik) {
+            // Check if search matches (extract NIK from search if needed)
+            $matchSearch = false;
+            if ($search) {
+                $searchTerms = preg_split('/,\s*/', trim($search));
+                foreach ($searchTerms as $term) {
+                    $term = trim($term);
+                    if (strpos($term, ' - ') !== false) {
+                        $term = explode(' - ', $term)[0];
+                    }
+                    if (strpos($tm->vcNik, $term) !== false) {
+                        $matchSearch = true;
+                        break;
+                    }
+                }
+            }
+            if ($search && !$matchSearch) {
+                continue;
+            }
+            if (!$search && $nik && $tm->vcNik !== $nik) {
                 continue;
             }
             $debugTidakMasuk[] = [
@@ -630,6 +733,14 @@ class StatistikAbsensiController extends Controller
         // Total jam izin keluar komplek (IB) dan pulang cepat (PC)
         $totalJamIzinKeluarKomplek = array_sum($izinKeluarKomplekJamPerNik);
         $totalJamIzinPulangCepat = array_sum($izinPulangCepatJamPerNik);
+        
+        // Hitung total jam izin keluar (total) dengan logika baru:
+        // Total Jam Izin Keluar = Jumlah Jam Izin Masuk Siang + Jumlah Jam Izin Keluar Komplek + Jumlah Jam Izin Pulang Cepat
+        $totalJamIzinKeluar = $totalJamMasukSiang + $totalJamIzinKeluarKomplek + $totalJamIzinPulangCepat;
+        
+        // Hitung rata-rata jam izin keluar per karyawan
+        $jumlahKaryawan = max(1, $nikList->count());
+        $rataJamIzinKeluar = round($totalJamIzinKeluar / $jumlahKaryawan, 2);
 
         // Hitung total jam standar kerja berdasarkan hari kerja
         // Asumsi: 8 jam per hari kerja (bisa disesuaikan jika ada data shift standar)
@@ -643,8 +754,10 @@ class StatistikAbsensiController extends Controller
         return view('absen.statistik.index', [
             'startDate' => $startDate,
             'endDate' => $endDate,
-            'nik' => $nik,
+            'search' => $search,
+            'nik' => $search, // Keep for backward compatibility
             'group' => $group,
+            'karyawanList' => $karyawanList,
             'groups' => $groups,
             'hadir' => $hadir,
             'ringkasanTidakMasuk' => $ringkasanTidakMasuk,

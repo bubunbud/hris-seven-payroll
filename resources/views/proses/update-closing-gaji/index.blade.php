@@ -21,17 +21,27 @@
                 <div class="card-body">
                     <form method="GET" action="{{ route('update-closing-gaji.index') }}" id="filterForm">
                         <div class="row g-3">
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <label for="periode_dari" class="form-label">Periode Dari</label>
                                 <input type="date" class="form-control" id="periode_dari" name="periode_dari" value="{{ $startDate }}">
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <label for="periode_sampai" class="form-label">Periode Sampai</label>
                                 <input type="date" class="form-control" id="periode_sampai" name="periode_sampai" value="{{ $endDate }}">
                             </div>
-                            <div class="col-md-2">
-                                <label for="nik" class="form-label">NIK</label>
-                                <input type="text" class="form-control" id="nik" name="nik" value="{{ $nik }}" placeholder="Cari NIK">
+                            <div class="col-md-3">
+                                <label for="search" class="form-label">NIK / Nama</label>
+                                <div class="position-relative">
+                                    <input type="text"
+                                        class="form-control"
+                                        id="search"
+                                        name="search"
+                                        value="{{ $search ?? '' }}"
+                                        placeholder="Cari NIK atau Nama (pisahkan dengan koma)"
+                                        autocomplete="off">
+                                    <div id="searchAutocomplete" class="autocomplete-dropdown" style="display: none;"></div>
+                                </div>
+                                <small class="text-muted">Ketik NIK atau nama karyawan untuk mencari (bisa multiple, pisahkan dengan koma)</small>
                             </div>
                             <div class="col-md-2">
                                 <label for="divisi" class="form-label">Divisi</label>
@@ -44,7 +54,8 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-md-2 d-flex align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label">&nbsp;</label>
                                 <button type="submit" class="btn btn-primary w-100 shadow-sm">
                                     <i class="fas fa-eye me-2"></i>Preview
                                 </button>
@@ -77,7 +88,8 @@
                                 @php
                                 $totalPenerimaan = $row->decGapok + $row->decUangMakan + $row->decTransport +
                                 $row->decPremi + $row->decTotallembur1 + $row->decTotallembur2 +
-                                $row->decTotallembur3 + $row->decRapel;
+                                $row->decTotallembur3 + ($row->decTotallembur4 ?? 0) + $row->decRapel
+                                + (float)($row->decTunjanganJabatan ?? 0);
                                 $totalPotongan = $row->decPotonganBPJSKes + $row->decPotonganBPJSJHT +
                                 $row->decPotonganBPJSJP + $row->decIuranSPN +
                                 $row->decPotonganKoperasi + $row->decPotonganBPR +
@@ -176,8 +188,12 @@
                                         </div>
                                         <div class="col-md-4">
                                             <div class="mb-3">
-                                                <label for="vcNik" class="form-label">NIK <span class="text-danger">*</span></label>
-                                                <input type="text" class="form-control" id="vcNik" name="vcNik" maxlength="8" required>
+                                                <label for="vcNik" class="form-label">NIK / Nama <span class="text-danger">*</span></label>
+                                                <div class="position-relative">
+                                                    <input type="text" class="form-control" id="vcNik" maxlength="50" required autocomplete="off" placeholder="Ketik NIK atau Nama">
+                                                    <input type="hidden" id="vcNikHidden" name="vcNik">
+                                                    <div id="nikAutocomplete" class="autocomplete-dropdown" style="display: none;"></div>
+                                                </div>
                                                 <div class="form-text" id="namaPreview"></div>
                                             </div>
                                         </div>
@@ -331,12 +347,12 @@
                             </h2>
                             <div id="tunjangan" class="accordion-collapse collapse" data-bs-parent="#closingAccordion">
                                 <div class="accordion-body">
-                                    <!-- Row pertama: Jumlah Makan, Tarif Makan, Total Uang Makan -->
+                                    <!-- Row pertama: Jumlah Makan (auto), Tarif Makan, Total Uang Makan -->
                                     <div class="row mb-3">
                                         <div class="col-md-4">
                                             <div class="mb-3">
                                                 <label for="intMakan" class="form-label">Jumlah Makan</label>
-                                                <input type="number" class="form-control" id="intMakan" name="intMakan" min="0">
+                                                <input type="number" class="form-control bg-light" id="intMakan" name="intMakan" min="0" readonly tabindex="-1">
                                             </div>
                                         </div>
                                         <div class="col-md-4">
@@ -348,16 +364,31 @@
                                         <div class="col-md-4">
                                             <div class="mb-3">
                                                 <label for="decUangMakan" class="form-label">Total Uang Makan</label>
-                                                <input type="number" class="form-control" id="decUangMakan" name="decUangMakan" step="0.01" min="0">
+                                                <input type="number" class="form-control bg-light" id="decUangMakan" name="decUangMakan" step="0.01" min="0" readonly tabindex="-1">
                                             </div>
                                         </div>
                                     </div>
-                                    <!-- Row kedua: Jumlah Transport, Tarif Transport, Total Uang Transport -->
+                                    <!-- Row breakdown Makan: Makan Kerja, Makan Libur -->
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="intMakanKerja" class="form-label">Makan Kerja</label>
+                                                <input type="number" class="form-control" id="intMakanKerja" name="intMakanKerja" min="0" placeholder="0">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="intMakanLibur" class="form-label">Makan Libur</label>
+                                                <input type="number" class="form-control" id="intMakanLibur" name="intMakanLibur" min="0" placeholder="0">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Row kedua: Jumlah Transport (auto), Tarif Transport, Total Uang Transport -->
                                     <div class="row mb-3">
                                         <div class="col-md-4">
                                             <div class="mb-3">
                                                 <label for="intTransport" class="form-label">Jumlah Transport</label>
-                                                <input type="number" class="form-control" id="intTransport" name="intTransport" min="0">
+                                                <input type="number" class="form-control bg-light" id="intTransport" name="intTransport" min="0" readonly tabindex="-1">
                                             </div>
                                         </div>
                                         <div class="col-md-4">
@@ -369,7 +400,22 @@
                                         <div class="col-md-4">
                                             <div class="mb-3">
                                                 <label for="decTransport" class="form-label">Total Uang Transport</label>
-                                                <input type="number" class="form-control" id="decTransport" name="decTransport" step="0.01" min="0">
+                                                <input type="number" class="form-control bg-light" id="decTransport" name="decTransport" step="0.01" min="0" readonly tabindex="-1">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Row breakdown Transport: Transport Kerja, Transport Libur -->
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="intTransportKerja" class="form-label">Transport Kerja</label>
+                                                <input type="number" class="form-control" id="intTransportKerja" name="intTransportKerja" min="0" placeholder="0">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="intTransportLibur" class="form-label">Transport Libur</label>
+                                                <input type="number" class="form-control" id="intTransportLibur" name="intTransportLibur" min="0" placeholder="0">
                                             </div>
                                         </div>
                                     </div>
@@ -385,6 +431,14 @@
                                             <div class="mb-3">
                                                 <label for="decRapel" class="form-label">Rapel / Selisih Upah</label>
                                                 <input type="number" class="form-control" id="decRapel" name="decRapel" step="0.01">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="decTunjanganJabatan" class="form-label">Tunjangan Jabatan</label>
+                                                <input type="number" class="form-control" id="decTunjanganJabatan" name="decTunjanganJabatan" step="0.01" min="0">
                                             </div>
                                         </div>
                                     </div>
@@ -523,7 +577,8 @@
                             </h2>
                             <div id="lembur" class="accordion-collapse collapse" data-bs-parent="#closingAccordion">
                                 <div class="accordion-body">
-                                    <h6 class="mb-3">Lembur Hari Kerja</h6>
+                                    <h6 class="mb-2">Lembur Hari Kerja</h6>
+                                    <p class="text-muted small mb-3">Perhitungan otomatis closing (HKN per hari): J1 maks 1 jam ×1,5; <strong>J2 maks 8 jam</strong> ×2; J3 maks 1 jam ×3; J4 sisa ×4. Kolom di bawah berisi <strong>jumlah akumulasi periode</strong> (bukan batas per hari).</p>
                                     <!-- Row pertama: Jam Lembur Kerja 1, 2, 3 -->
                                     <div class="row mb-3">
                                         <div class="col-md-4">
@@ -534,7 +589,7 @@
                                         </div>
                                         <div class="col-md-4">
                                             <div class="mb-3">
-                                                <label for="decJamLemburKerja2" class="form-label">Jam Lembur Kerja 2</label>
+                                                <label for="decJamLemburKerja2" class="form-label">Jam Lembur Kerja 2 <span class="text-muted small">(tier 2×, maks 8 jam/hari HKN)</span></label>
                                                 <input type="number" class="form-control" id="decJamLemburKerja2" name="decJamLemburKerja2" step="0.01" min="0">
                                             </div>
                                         </div>
@@ -542,6 +597,14 @@
                                             <div class="mb-3">
                                                 <label for="decJamLemburKerja3" class="form-label">Jam Lembur Kerja 3</label>
                                                 <input type="number" class="form-control" id="decJamLemburKerja3" name="decJamLemburKerja3" step="0.01" min="0">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row mb-3">
+                                        <div class="col-md-4">
+                                            <div class="mb-3">
+                                                <label for="decJamLemburKerja4" class="form-label">Jam Lembur Kerja 4</label>
+                                                <input type="number" class="form-control" id="decJamLemburKerja4" name="decJamLemburKerja4" step="0.01" min="0">
                                             </div>
                                         </div>
                                     </div>
@@ -563,6 +626,14 @@
                                             <div class="mb-3">
                                                 <label for="decLemburKerja3" class="form-label">Nominal Lembur Kerja 3</label>
                                                 <input type="number" class="form-control" id="decLemburKerja3" name="decLemburKerja3" step="0.01" min="0">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row mb-4">
+                                        <div class="col-md-4">
+                                            <div class="mb-3">
+                                                <label for="decLemburKerja4" class="form-label">Nominal Lembur Kerja 4</label>
+                                                <input type="number" class="form-control" id="decLemburKerja4" name="decLemburKerja4" step="0.01" min="0">
                                             </div>
                                         </div>
                                     </div>
@@ -637,6 +708,63 @@
                                             <div class="mb-3">
                                                 <label for="decTotallembur3" class="form-label">Total Nominal Lembur 3</label>
                                                 <input type="number" class="form-control" id="decTotallembur3" name="decTotallembur3" step="0.01" min="0">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="mb-3">
+                                                <label for="decTotallembur4" class="form-label">Total Nominal Lembur 4</label>
+                                                <input type="number" class="form-control" id="decTotallembur4" name="decTotallembur4" step="0.01" min="0">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Beban External -->
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#bebanExternal">
+                                    <i class="fas fa-external-link-alt me-2"></i>Beban External
+                                </button>
+                            </h2>
+                            <div id="bebanExternal" class="accordion-collapse collapse" data-bs-parent="#closingAccordion">
+                                <div class="accordion-body">
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <div class="mb-3">
+                                                <label for="decBebanTgi" class="form-label">Beban TGI</label>
+                                                <input type="number" class="form-control" id="decBebanTgi" name="decBebanTgi" step="0.01" min="0">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="mb-3">
+                                                <label for="decBebanSiaExp" class="form-label">Beban SIA-EXP</label>
+                                                <input type="number" class="form-control" id="decBebanSiaExp" name="decBebanSiaExp" step="0.01" min="0">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="mb-3">
+                                                <label for="decBebanSiaProd" class="form-label">Beban SIA-Prod</label>
+                                                <input type="number" class="form-control" id="decBebanSiaProd" name="decBebanSiaProd" step="0.01" min="0">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="mb-3">
+                                                <label for="decBebanRma" class="form-label">Beban RMA</label>
+                                                <input type="number" class="form-control" id="decBebanRma" name="decBebanRma" step="0.01" min="0">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="mb-3">
+                                                <label for="decBebanSmu" class="form-label">Beban SMU</label>
+                                                <input type="number" class="form-control" id="decBebanSmu" name="decBebanSmu" step="0.01" min="0">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="mb-3">
+                                                <label for="decBebanAbnJkt" class="form-label">Beban ABN-JKT</label>
+                                                <input type="number" class="form-control" id="decBebanAbnJkt" name="decBebanAbnJkt" step="0.01" min="0">
                                             </div>
                                         </div>
                                     </div>
@@ -726,13 +854,39 @@
         document.getElementById('closingModalLabel').textContent = 'Tambah Closing Gaji';
         document.getElementById('closingForm').reset();
         document.getElementById('_method').value = 'POST';
+        // Reset field NIK dan hidden field
+        document.getElementById('vcNik').value = '';
+        document.getElementById('vcNikHidden').value = '';
+        document.getElementById('namaPreview').textContent = '';
         document.getElementById('vcNik').readOnly = false;
         toggleInfoDasarFields(false); // Enable all fields
+        updateJumlahMakanFromBreakdown();
+        updateJumlahTransportFromBreakdown();
         new bootstrap.Modal(document.getElementById('closingModal')).show();
     });
 
     document.getElementById('closingForm').addEventListener('submit', function(e) {
         e.preventDefault();
+        
+        // Pastikan hidden field vcNik terisi sebelum submit
+        const nikInput = document.getElementById('vcNik');
+        const nikHidden = document.getElementById('vcNikHidden');
+        if (nikInput && nikHidden) {
+            const nikValue = nikInput.value.trim();
+            // Jika format "NIK - Nama", ambil NIK saja
+            if (nikValue.includes(' - ')) {
+                const nikOnly = nikValue.split(' - ')[0].trim();
+                nikHidden.value = nikOnly;
+            } else if (nikValue && !nikHidden.value) {
+                nikHidden.value = nikValue;
+            }
+            // Validasi: pastikan hidden field terisi
+            if (!nikHidden.value) {
+                showAlert('error', 'NIK harus diisi');
+                return;
+            }
+        }
+        
         const url = isEditMode ? `/update-closing-gaji/${currentId}` : '/update-closing-gaji';
         document.getElementById('_method').value = isEditMode ? 'PUT' : 'POST';
         const formData = new FormData(this);
@@ -783,6 +937,9 @@
                     const record = data.record;
                     // Populate form fields
                     Object.keys(record).forEach(key => {
+                        // Skip vcNik karena akan di-handle khusus
+                        if (key === 'vcNik') return;
+                        
                         const field = document.getElementById(key);
                         if (field) {
                             if (field.type === 'checkbox') {
@@ -793,11 +950,57 @@
                         }
                     });
 
+                    // Set NIK: hidden field untuk submit, input untuk display
+                    const nikValue = record.vcNik || '';
+                    document.getElementById('vcNikHidden').value = nikValue;
+                    // Fetch nama karyawan untuk ditampilkan di input
+                    if (nikValue) {
+                        fetch(`/karyawan/${nikValue}`, {
+                                method: 'GET',
+                                headers: {
+                                    'Accept': 'application/json'
+                                }
+                            })
+                            .then(r => r.json())
+                            .then(dataKaryawan => {
+                                if (dataKaryawan.success && dataKaryawan.karyawan) {
+                                    document.getElementById('vcNik').value = `${nikValue} - ${dataKaryawan.karyawan.Nama || ''}`;
+                                    document.getElementById('namaPreview').textContent = 'Nama: ' + (dataKaryawan.karyawan.Nama || '');
+                                } else {
+                                    document.getElementById('vcNik').value = nikValue;
+                                    document.getElementById('namaPreview').textContent = '';
+                                }
+                            })
+                            .catch(() => {
+                                document.getElementById('vcNik').value = nikValue;
+                                document.getElementById('namaPreview').textContent = '';
+                            });
+                    } else {
+                        document.getElementById('vcNik').value = nikValue;
+                        document.getElementById('namaPreview').textContent = '';
+                    }
+
                     document.getElementById('vcNik').readOnly = true;
                     toggleInfoDasarFields(true); // Disable all fields in Informasi Dasar
 
                     // Load gapok data untuk perhitungan lembur
-                    fetchGapokData(record.vcNik);
+                    fetchGapokData(nikValue);
+
+                    // Update Jumlah Makan & Jumlah Transport dari breakdown (Makan Kerja+Libur, Transport Kerja+Libur)
+                    updateJumlahMakanFromBreakdown();
+                    updateJumlahTransportFromBreakdown();
+
+                    // Jika closing ke-2, load absensi P1 dan calculate premi hadir
+                    if (record.vcClosingKe === '2' || record.vcClosingKe === 2) {
+                        const nik = record.vcNik;
+                        const periode = record.periode;
+                        if (nik && periode) {
+                            loadAbsensiP1(nik);
+                        }
+                    } else {
+                        // Pastikan calculate premi hadir dipanggil untuk reset nilai
+                        calculatePremiHadir();
+                    }
 
                     new bootstrap.Modal(document.getElementById('closingModal')).show();
                 }
@@ -951,6 +1154,22 @@
         document.getElementById('decTransport').value = total.toFixed(2);
     }
 
+    // Update intMakan dari breakdown (Makan Kerja + Makan Libur)
+    function updateJumlahMakanFromBreakdown() {
+        const makanKerja = parseInt(document.getElementById('intMakanKerja').value) || 0;
+        const makanLibur = parseInt(document.getElementById('intMakanLibur').value) || 0;
+        document.getElementById('intMakan').value = makanKerja + makanLibur;
+        calculateTotalUangMakan();
+    }
+
+    // Update intTransport dari breakdown (Transport Kerja + Transport Libur)
+    function updateJumlahTransportFromBreakdown() {
+        const transportKerja = parseInt(document.getElementById('intTransportKerja').value) || 0;
+        const transportLibur = parseInt(document.getElementById('intTransportLibur').value) || 0;
+        document.getElementById('intTransport').value = transportKerja + transportLibur;
+        calculateTotalUangTransport();
+    }
+
     // Function untuk hitung nominal lembur kerja
     function calculateNominalLemburKerja() {
         if (!gapokPerBulan || gapokPerBulan === 0) {
@@ -966,24 +1185,29 @@
         const nominalKerja1 = jamKerja1 * 1.5 * ratePerJam;
         document.getElementById('decLemburKerja1').value = nominalKerja1.toFixed(2);
 
-        // Hitung nominal lembur kerja 2
+        // Hitung nominal lembur kerja 2 (HKN: 2×; per hari maks 8 jam tier ini — field = akumulasi periode)
         const jamKerja2 = parseFloat(document.getElementById('decJamLemburKerja2').value) || 0;
         const nominalKerja2 = jamKerja2 * 2 * ratePerJam;
         document.getElementById('decLemburKerja2').value = nominalKerja2.toFixed(2);
 
-        // Hitung nominal lembur kerja 3
+        // Hitung nominal lembur kerja 3 (HKN: 3×)
         const jamKerja3 = parseFloat(document.getElementById('decJamLemburKerja3').value) || 0;
-        const nominalKerja3 = jamKerja3 * 2 * ratePerJam; // Untuk hari kerja, jam ke-3 juga 2x
+        const nominalKerja3 = jamKerja3 * 3 * ratePerJam;
         document.getElementById('decLemburKerja3').value = nominalKerja3.toFixed(2);
 
+        // Hitung nominal lembur kerja 4 (HKN: 4×)
+        const jamKerja4 = parseFloat(document.getElementById('decJamLemburKerja4').value) || 0;
+        const nominalKerja4 = jamKerja4 * 4 * ratePerJam;
+        document.getElementById('decLemburKerja4').value = nominalKerja4.toFixed(2);
+
         // Hitung total jam lembur kerja
-        const totalJamKerja = jamKerja1 + jamKerja2 + jamKerja3;
+        const totalJamKerja = jamKerja1 + jamKerja2 + jamKerja3 + jamKerja4;
         document.getElementById('decJamLemburKerja').value = totalJamKerja.toFixed(2);
 
         // Hitung total nominal lembur 1
         document.getElementById('decTotallembur1').value = nominalKerja1.toFixed(2);
 
-        // Recalculate total lembur
+        // Recalculate total lembur (termasuk decTotallembur4 dari decLemburKerja4)
         calculateTotalLembur();
     }
 
@@ -1029,6 +1253,12 @@
 
     // Function untuk hitung total lembur
     function calculateTotalLembur() {
+        if (!gapokPerBulan || gapokPerBulan === 0) {
+            const gapokSetengah = parseFloat(document.getElementById('decGapok').value) || 0;
+            gapokPerBulan = gapokSetengah * 2;
+        }
+        const ratePerJam = gapokPerBulan / 173;
+
         // Total lembur 1 = hanya dari lembur kerja 1 (sudah dihitung di calculateNominalLemburKerja)
 
         // Total lembur 2 = lembur kerja 2 + lembur libur 2
@@ -1036,26 +1266,41 @@
         const lemburLibur2 = parseFloat(document.getElementById('decLembur2').value) || 0;
         document.getElementById('decTotallembur2').value = (lemburKerja2 + lemburLibur2).toFixed(2);
 
-        // Total lembur 3 = lembur kerja 3 + lembur libur 3
+        // Total lembur 3 = J3 (HKN) + bagian libur jam ke-9 (3×), dari jam decJamLemburLibur3
         const lemburKerja3 = parseFloat(document.getElementById('decLemburKerja3').value) || 0;
-        const lemburLibur3 = parseFloat(document.getElementById('decLembur3').value) || 0;
-        document.getElementById('decTotallembur3').value = (lemburKerja3 + lemburLibur3).toFixed(2);
+        const jamLibur3 = parseFloat(document.getElementById('decJamLemburLibur3').value) || 0;
+        let nominalLibur3x = 0;
+        let nominalLibur4x = 0;
+        if (jamLibur3 > 0) {
+            const jamKe9 = Math.min(1, jamLibur3);
+            const jamKe10 = Math.max(0, jamLibur3 - jamKe9);
+            nominalLibur3x = jamKe9 * 3 * ratePerJam;
+            nominalLibur4x = jamKe10 * 4 * ratePerJam;
+        }
+        document.getElementById('decTotallembur3').value = (lemburKerja3 + nominalLibur3x).toFixed(2);
 
-        // Total Nominal Lembur = Total Nominal Lembur 1 + 2 + 3
+        // Total lembur 4 = J4 (HKN) + bagian libur jam ke-10 dst (4×)
+        const lemburKerja4 = parseFloat(document.getElementById('decLemburKerja4').value) || 0;
+        document.getElementById('decTotallembur4').value = (lemburKerja4 + nominalLibur4x).toFixed(2);
+
+        // Total Nominal Lembur = Total Nominal Lembur 1 + 2 + 3 + 4
         const totalLembur1 = parseFloat(document.getElementById('decTotallembur1').value) || 0;
         const totalLembur2 = parseFloat(document.getElementById('decTotallembur2').value) || 0;
         const totalLembur3 = parseFloat(document.getElementById('decTotallembur3').value) || 0;
-        const totalNominalLembur = totalLembur1 + totalLembur2 + totalLembur3;
+        const totalLembur4 = parseFloat(document.getElementById('decTotallembur4').value) || 0;
+        const totalNominalLembur = totalLembur1 + totalLembur2 + totalLembur3 + totalLembur4;
         document.getElementById('decTotalNominalLembur').value = totalNominalLembur.toFixed(2);
     }
 
-    // Autofill nama dan gapok saat NIK di-blur
-    document.getElementById('vcNik').addEventListener('blur', function() {
-        const nik = this.value.trim();
-        if (!nik) return;
-
+    // Function untuk load data karyawan dan gapok berdasarkan NIK
+    function loadKaryawanDataClosing(nik) {
+        if (!nik || !nik.trim()) {
+            document.getElementById('namaPreview').textContent = '';
+            return;
+        }
+        
         // Ambil data karyawan
-        fetch(`/karyawan/${nik}`, {
+        fetch(`/karyawan/${nik.trim()}`, {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json'
@@ -1076,11 +1321,147 @@
                     }
 
                     // Ambil data gapok
-                    fetchGapokData(nik);
+                    fetchGapokData(nik.trim());
                 }
             }).catch(() => {
                 document.getElementById('namaPreview').textContent = '';
             });
+    }
+
+    // Autocomplete untuk field NIK di modal Closing Gaji
+    let nikAutocompleteTimeoutClosing;
+    let nikSelectedIndexClosing = -1;
+    const nikInputClosing = document.getElementById('vcNik');
+    const nikAutocompleteDivClosing = document.getElementById('nikAutocomplete');
+    const nikHiddenInputClosing = document.getElementById('vcNikHidden');
+
+    if (nikInputClosing && nikAutocompleteDivClosing) {
+        nikInputClosing.addEventListener('input', function() {
+            const value = this.value.trim().toLowerCase();
+            clearTimeout(nikAutocompleteTimeoutClosing);
+            
+            if (value.length === 0) {
+                nikAutocompleteDivClosing.style.display = 'none';
+                nikSelectedIndexClosing = -1;
+                nikHiddenInputClosing.value = '';
+                loadKaryawanDataClosing('');
+                return;
+            }
+            
+            if (value.length < 2) {
+                nikAutocompleteDivClosing.style.display = 'none';
+                return;
+            }
+            
+            nikAutocompleteTimeoutClosing = setTimeout(() => {
+                const results = karyawanList.filter(k => {
+                    const searchText = (k.nik + ' ' + k.nama + ' ' + k.divisi + ' ' + k.bagian).toLowerCase();
+                    return searchText.includes(value);
+                }).slice(0, 20);
+                displayNikAutocompleteClosing(results);
+            }, 200);
+        });
+
+        nikInputClosing.addEventListener('keydown', function(e) {
+            const items = nikAutocompleteDivClosing.querySelectorAll('.autocomplete-item');
+            if (items.length === 0) return;
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                nikSelectedIndexClosing = Math.min(nikSelectedIndexClosing + 1, items.length - 1);
+                updateNikSelectedItemClosing(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                nikSelectedIndexClosing = Math.max(nikSelectedIndexClosing - 1, -1);
+                updateNikSelectedItemClosing(items);
+            } else if (e.key === 'Enter' && nikSelectedIndexClosing >= 0) {
+                e.preventDefault();
+                items[nikSelectedIndexClosing].click();
+            } else if (e.key === 'Enter' && nikSelectedIndexClosing === -1 && this.value.trim()) {
+                // Jika Enter tanpa pilihan, coba load data langsung (untuk NIK yang diketik manual)
+                const nikValue = this.value.trim();
+                // Jika format "NIK - Nama", ambil NIK saja
+                if (nikValue.includes(' - ')) {
+                    const nikOnly = nikValue.split(' - ')[0].trim();
+                    nikInputClosing.value = nikOnly;
+                    nikHiddenInputClosing.value = nikOnly;
+                    loadKaryawanDataClosing(nikOnly);
+                } else {
+                    nikHiddenInputClosing.value = nikValue;
+                    loadKaryawanDataClosing(nikValue);
+                }
+                nikAutocompleteDivClosing.style.display = 'none';
+            }
+        });
+
+        // Blur event untuk load data jika user mengetik manual
+        nikInputClosing.addEventListener('blur', function() {
+            setTimeout(() => {
+                const value = this.value.trim();
+                if (value && !nikHiddenInputClosing.value) {
+                    // Jika format "NIK - Nama", ambil NIK saja
+                    if (value.includes(' - ')) {
+                        const nikOnly = value.split(' - ')[0].trim();
+                        nikInputClosing.value = nikOnly;
+                        nikHiddenInputClosing.value = nikOnly;
+                        loadKaryawanDataClosing(nikOnly);
+                    } else {
+                        nikHiddenInputClosing.value = value;
+                        loadKaryawanDataClosing(value);
+                    }
+                }
+            }, 200);
+        });
+    }
+
+    function displayNikAutocompleteClosing(karyawans) {
+        if (!karyawans || karyawans.length === 0) {
+            nikAutocompleteDivClosing.innerHTML = '<div class="autocomplete-item">Tidak ada karyawan ditemukan</div>';
+            nikAutocompleteDivClosing.style.display = 'block';
+            return;
+        }
+        nikAutocompleteDivClosing.innerHTML = '';
+        karyawans.forEach((karyawan, index) => {
+            if (!karyawan || !karyawan.nik) return;
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.innerHTML = `
+                <strong>${karyawan.nik || ''}</strong> - ${karyawan.nama || ''}
+                <small>Divisi: ${karyawan.divisi || '-'} | Bagian: ${karyawan.bagian || '-'}</small>
+            `;
+            item.addEventListener('click', function() {
+                selectNikKaryawanClosing(karyawan);
+            });
+            nikAutocompleteDivClosing.appendChild(item);
+        });
+        nikAutocompleteDivClosing.style.display = 'block';
+        nikSelectedIndexClosing = -1;
+    }
+
+    function selectNikKaryawanClosing(karyawan) {
+        nikInputClosing.value = `${karyawan.nik} - ${karyawan.nama}`;
+        nikHiddenInputClosing.value = karyawan.nik;
+        nikAutocompleteDivClosing.style.display = 'none';
+        nikSelectedIndexClosing = -1;
+        loadKaryawanDataClosing(karyawan.nik);
+        nikInputClosing.focus();
+    }
+
+    function updateNikSelectedItemClosing(items) {
+        items.forEach((item, index) => {
+            item.classList.toggle('active', index === nikSelectedIndexClosing);
+            if (index === nikSelectedIndexClosing) {
+                item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+        });
+    }
+
+    // Close autocomplete when clicking outside
+    document.addEventListener('click', function(e) {
+        if (nikInputClosing && nikAutocompleteDivClosing && !nikInputClosing.contains(e.target) && !nikAutocompleteDivClosing.contains(e.target)) {
+            nikAutocompleteDivClosing.style.display = 'none';
+            nikSelectedIndexClosing = -1;
+        }
     });
 
     // Event listeners untuk auto-calculation
@@ -1092,10 +1473,17 @@
     document.getElementById('intTransport').addEventListener('input', calculateTotalUangTransport);
     document.getElementById('decVarTransport').addEventListener('input', calculateTotalUangTransport);
 
+    // Breakdown Makan & Transport - auto-update Jumlah dan Total
+    document.getElementById('intMakanKerja').addEventListener('input', updateJumlahMakanFromBreakdown);
+    document.getElementById('intMakanLibur').addEventListener('input', updateJumlahMakanFromBreakdown);
+    document.getElementById('intTransportKerja').addEventListener('input', updateJumlahTransportFromBreakdown);
+    document.getElementById('intTransportLibur').addEventListener('input', updateJumlahTransportFromBreakdown);
+
     // Nominal Lembur Kerja
     document.getElementById('decJamLemburKerja1').addEventListener('input', calculateNominalLemburKerja);
     document.getElementById('decJamLemburKerja2').addEventListener('input', calculateNominalLemburKerja);
     document.getElementById('decJamLemburKerja3').addEventListener('input', calculateNominalLemburKerja);
+    document.getElementById('decJamLemburKerja4').addEventListener('input', calculateNominalLemburKerja);
 
     // Nominal Lembur Libur
     document.getElementById('decJamLemburLibur2').addEventListener('input', calculateNominalLemburLibur);
@@ -1105,6 +1493,8 @@
     document.getElementById('decLemburKerja1').addEventListener('input', calculateTotalLembur);
     document.getElementById('decLemburKerja2').addEventListener('input', calculateTotalLembur);
     document.getElementById('decLemburKerja3').addEventListener('input', calculateTotalLembur);
+    document.getElementById('decLemburKerja4').addEventListener('input', calculateTotalLembur);
+    document.getElementById('decTotallembur4').addEventListener('input', calculateTotalLembur);
     document.getElementById('decLembur2').addEventListener('input', calculateTotalLembur);
     document.getElementById('decLembur3').addEventListener('input', calculateTotalLembur);
 
@@ -1140,54 +1530,98 @@
             .then(data => {
                 if (data.success) {
                     absensiP1 = data.absensi;
+                    
                     // Set nilai ke field int*Lalu (yang akan disimpan ke database)
-                    document.getElementById('intCutiLalu').value = absensiP1.intJmlCuti || 0;
-                    document.getElementById('intSakitLalu').value = absensiP1.intJmlSakit || 0;
-                    document.getElementById('intIzinLalu').value = absensiP1.intJmlIzin || 0;
-                    document.getElementById('intAlphaLalu').value = absensiP1.intJmlAlpha || 0;
-                    document.getElementById('intTelatLalu').value = absensiP1.intJmlTelat || 0;
-                    document.getElementById('intHcLalu').value = absensiP1.intHC || 0;
+                    const intCutiLaluEl = document.getElementById('intCutiLalu');
+                    const intSakitLaluEl = document.getElementById('intSakitLalu');
+                    const intIzinLaluEl = document.getElementById('intIzinLalu');
+                    const intAlphaLaluEl = document.getElementById('intAlphaLalu');
+                    const intTelatLaluEl = document.getElementById('intTelatLalu');
+                    const intHcLaluEl = document.getElementById('intHcLalu');
+                    const periodeP1InfoEl = document.getElementById('periodeP1Info');
+                    const absensiP1SectionEl = document.getElementById('absensiP1Section');
+
+                    if (intCutiLaluEl) intCutiLaluEl.value = absensiP1.intJmlCuti || 0;
+                    if (intSakitLaluEl) intSakitLaluEl.value = absensiP1.intJmlSakit || 0;
+                    if (intIzinLaluEl) intIzinLaluEl.value = absensiP1.intJmlIzin || 0;
+                    if (intAlphaLaluEl) intAlphaLaluEl.value = absensiP1.intJmlAlpha || 0;
+                    if (intTelatLaluEl) intTelatLaluEl.value = absensiP1.intJmlTelat || 0;
+                    if (intHcLaluEl) intHcLaluEl.value = absensiP1.intHC || 0;
 
                     // Update info periode P1
-                    const periodeAwal = new Date(data.periode_awal).toLocaleDateString('id-ID');
-                    const periodeAkhir = new Date(data.periode_akhir).toLocaleDateString('id-ID');
-                    document.getElementById('periodeP1Info').textContent = `(${periodeAwal} - ${periodeAkhir})`;
-                    document.getElementById('absensiP1Section').classList.remove('d-none');
+                    if (periodeP1InfoEl && data.periode_awal && data.periode_akhir) {
+                        const periodeAwal = new Date(data.periode_awal).toLocaleDateString('id-ID');
+                        const periodeAkhir = new Date(data.periode_akhir).toLocaleDateString('id-ID');
+                        periodeP1InfoEl.textContent = `(${periodeAwal} - ${periodeAkhir})`;
+                    }
+                    
+                    if (absensiP1SectionEl) {
+                        absensiP1SectionEl.classList.remove('d-none');
+                    }
 
                     // Recalculate premi hadir
                     calculatePremiHadir();
                 } else {
-                    document.getElementById('absensiP1Section').classList.add('d-none');
+                    const absensiP1SectionEl = document.getElementById('absensiP1Section');
+                    if (absensiP1SectionEl) {
+                        absensiP1SectionEl.classList.add('d-none');
+                    }
                 }
             })
             .catch(err => {
                 console.error('Error loading absensi P1:', err);
-                document.getElementById('absensiP1Section').classList.add('d-none');
+                const absensiP1SectionEl = document.getElementById('absensiP1Section');
+                if (absensiP1SectionEl) {
+                    absensiP1SectionEl.classList.add('d-none');
+                }
             });
     }
 
     // Function untuk hitung premi hadir
     function calculatePremiHadir() {
-        const vcClosingKe = document.getElementById('vcClosingKe').value;
+        const vcClosingKeEl = document.getElementById('vcClosingKe');
+        const decPremiEl = document.getElementById('decPremi');
+        
+        if (!vcClosingKeEl || !decPremiEl) return;
+        
+        const vcClosingKe = vcClosingKeEl.value;
         if (vcClosingKe !== '2') {
-            document.getElementById('decPremi').value = 0;
+            decPremiEl.value = 0;
             return;
         }
 
         // Total I + A + T + HC (P1 + P2)
         // P1 diambil dari field int*Lalu
-        const intIzinLalu = parseFloat(document.getElementById('intIzinLalu').value) || 0;
-        const intAlphaLalu = parseFloat(document.getElementById('intAlphaLalu').value) || 0;
-        const intTelatLalu = parseFloat(document.getElementById('intTelatLalu').value) || 0;
-        const intHcLalu = parseFloat(document.getElementById('intHcLalu').value) || 0;
+        const intIzinLaluEl = document.getElementById('intIzinLalu');
+        const intAlphaLaluEl = document.getElementById('intAlphaLalu');
+        const intTelatLaluEl = document.getElementById('intTelatLalu');
+        const intHcLaluEl = document.getElementById('intHcLalu');
+        const intJmlIzinEl = document.getElementById('intJmlIzin');
+        const intJmlAlphaEl = document.getElementById('intJmlAlpha');
+        const intJmlTelatEl = document.getElementById('intJmlTelat');
+        const intHCEl = document.getElementById('intHC');
+        const totalIATHCEl = document.getElementById('totalIATHC');
 
-        const totalIATHC = intIzinLalu + (parseFloat(document.getElementById('intJmlIzin').value) || 0) + // Izin Pribadi (P1 + P2)
-            intAlphaLalu + (parseFloat(document.getElementById('intJmlAlpha').value) || 0) + // Alpha (P1 + P2)
-            intTelatLalu + (parseFloat(document.getElementById('intJmlTelat').value) || 0) + // Telat (P1 + P2)
-            intHcLalu + (parseFloat(document.getElementById('intHC').value) || 0); // HC (P1 + P2)
+        // Check jika elemen tidak ada, return
+        if (!intIzinLaluEl || !intAlphaLaluEl || !intTelatLaluEl || !intHcLaluEl || 
+            !intJmlIzinEl || !intJmlAlphaEl || !intJmlTelatEl || !intHCEl) {
+            return;
+        }
 
-        // Update display total
-        document.getElementById('totalIATHC').textContent = totalIATHC;
+        const intIzinLalu = parseFloat(intIzinLaluEl.value) || 0;
+        const intAlphaLalu = parseFloat(intAlphaLaluEl.value) || 0;
+        const intTelatLalu = parseFloat(intTelatLaluEl.value) || 0;
+        const intHcLalu = parseFloat(intHcLaluEl.value) || 0;
+
+        const totalIATHC = intIzinLalu + (parseFloat(intJmlIzinEl.value) || 0) + // Izin Pribadi (P1 + P2)
+            intAlphaLalu + (parseFloat(intJmlAlphaEl.value) || 0) + // Alpha (P1 + P2)
+            intTelatLalu + (parseFloat(intJmlTelatEl.value) || 0) + // Telat (P1 + P2)
+            intHcLalu + (parseFloat(intHCEl.value) || 0); // HC (P1 + P2)
+
+        // Update display total (jika elemen ada)
+        if (totalIATHCEl) {
+            totalIATHCEl.textContent = totalIATHC;
+        }
 
         // Hitung premi
         let premi = 0;
@@ -1199,28 +1633,39 @@
             premi = 0; // Tidak dapat premi
         }
 
-        document.getElementById('decPremi').value = premi.toFixed(2);
+        decPremiEl.value = premi.toFixed(2);
     }
 
     // Event listeners untuk auto-calculate premi hadir
-    document.getElementById('vcClosingKe').addEventListener('change', function() {
-        const vcClosingKe = this.value;
-        if (vcClosingKe === '2') {
-            const nik = document.getElementById('vcNik').value;
-            const periode = document.getElementById('periode').value;
-            if (nik && periode) {
-                loadAbsensiP1(nik);
+    const vcClosingKeEl = document.getElementById('vcClosingKe');
+    if (vcClosingKeEl) {
+        vcClosingKeEl.addEventListener('change', function() {
+            const vcClosingKe = this.value;
+            if (vcClosingKe === '2') {
+                const nikEl = document.getElementById('vcNik');
+                const periodeEl = document.getElementById('periode');
+                if (nikEl && periodeEl && nikEl.value && periodeEl.value) {
+                    loadAbsensiP1(nikEl.value);
+                }
+            } else {
+                const absensiP1SectionEl = document.getElementById('absensiP1Section');
+                const decPremiEl = document.getElementById('decPremi');
+                if (absensiP1SectionEl) absensiP1SectionEl.classList.add('d-none');
+                if (decPremiEl) decPremiEl.value = 0;
             }
-        } else {
-            document.getElementById('absensiP1Section').classList.add('d-none');
-            document.getElementById('decPremi').value = 0;
-        }
-    });
+        });
+    }
 
-    document.getElementById('intJmlIzin').addEventListener('input', calculatePremiHadir);
-    document.getElementById('intJmlAlpha').addEventListener('input', calculatePremiHadir);
-    document.getElementById('intJmlTelat').addEventListener('input', calculatePremiHadir);
-    document.getElementById('intHC').addEventListener('input', calculatePremiHadir);
+    // Event listeners untuk field absensi (hanya jika elemen ada)
+    const intJmlIzinEl = document.getElementById('intJmlIzin');
+    const intJmlAlphaEl = document.getElementById('intJmlAlpha');
+    const intJmlTelatEl = document.getElementById('intJmlTelat');
+    const intHCEl = document.getElementById('intHC');
+    
+    if (intJmlIzinEl) intJmlIzinEl.addEventListener('input', calculatePremiHadir);
+    if (intJmlAlphaEl) intJmlAlphaEl.addEventListener('input', calculatePremiHadir);
+    if (intJmlTelatEl) intJmlTelatEl.addEventListener('input', calculatePremiHadir);
+    if (intHCEl) intHCEl.addEventListener('input', calculatePremiHadir);
 
     // Load absensi P1 saat periode berubah (jika periode 2)
     document.getElementById('periode').addEventListener('change', function() {
@@ -1230,5 +1675,154 @@
             loadAbsensiP1(nik);
         }
     });
+
+    // Autocomplete functionality untuk filter search
+    let searchTimeout;
+    let selectedIndex = -1;
+    const searchInput = document.getElementById('search');
+    const autocompleteDiv = document.getElementById('searchAutocomplete');
+    const karyawanList = @json($karyawanList ?? []);
+
+    function getCurrentSearchTerms() {
+        const value = searchInput.value.trim();
+        if (!value) return [];
+        return value.split(',').map(term => term.trim()).filter(term => term.length > 0);
+    }
+
+    function getCurrentTypingTerm() {
+        const value = searchInput.value.trim();
+        if (!value) return '';
+        const terms = value.split(',');
+        return terms[terms.length - 1].trim();
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            const currentTerm = getCurrentTypingTerm().toLowerCase();
+            clearTimeout(searchTimeout);
+            if (currentTerm.length === 0) {
+                autocompleteDiv.style.display = 'none';
+                selectedIndex = -1;
+                return;
+            }
+            if (currentTerm.length < 2) {
+                autocompleteDiv.style.display = 'none';
+                return;
+            }
+            searchTimeout = setTimeout(() => {
+                const results = karyawanList.filter(k => k.search.includes(currentTerm)).slice(0, 20);
+                displayAutocomplete(results);
+            }, 200);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            const items = autocompleteDiv.querySelectorAll('.autocomplete-item');
+            if (items.length === 0) return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                updateSelectedItem(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                updateSelectedItem(items);
+            } else if (e.key === 'Enter' && selectedIndex >= 0) {
+                e.preventDefault();
+                items[selectedIndex].click();
+            }
+        });
+    }
+
+    function displayAutocomplete(karyawans) {
+        if (!karyawans || karyawans.length === 0) {
+            autocompleteDiv.innerHTML = '<div class="autocomplete-item">Tidak ada karyawan ditemukan</div>';
+            autocompleteDiv.style.display = 'block';
+            return;
+        }
+        autocompleteDiv.innerHTML = '';
+        karyawans.forEach((karyawan, index) => {
+            if (!karyawan || !karyawan.nik) return;
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.innerHTML = `
+                <strong>${karyawan.nik || ''}</strong> - ${karyawan.nama || ''}
+                <small>Divisi: ${karyawan.divisi || '-'} | Bagian: ${karyawan.bagian || '-'}</small>
+            `;
+            item.addEventListener('click', function() {
+                selectKaryawan(karyawan);
+            });
+            autocompleteDiv.appendChild(item);
+        });
+        autocompleteDiv.style.display = 'block';
+        selectedIndex = -1;
+    }
+
+    function selectKaryawan(karyawan) {
+        const currentTerms = getCurrentSearchTerms();
+        currentTerms.pop();
+        const newTerm = `${karyawan.nik} - ${karyawan.nama}`;
+        currentTerms.push(newTerm);
+        searchInput.value = currentTerms.join(', ');
+        autocompleteDiv.style.display = 'none';
+        selectedIndex = -1;
+        searchInput.focus();
+    }
+
+    document.addEventListener('click', function(e) {
+        if (searchInput && autocompleteDiv && !searchInput.contains(e.target) && !autocompleteDiv.contains(e.target)) {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        }
+    });
+
+    function updateSelectedItem(items) {
+        items.forEach((item, index) => {
+            item.classList.toggle('active', index === selectedIndex);
+        });
+    }
 </script>
+@endpush
+
+@push('styles')
+<style>
+    .autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ced4da;
+        border-radius: 0.375rem;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        margin-top: 2px;
+    }
+    .autocomplete-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.2s;
+    }
+    .autocomplete-item:hover,
+    .autocomplete-item.active {
+        background-color: #f8f9fa;
+    }
+    .autocomplete-item:last-child {
+        border-bottom: none;
+    }
+    .autocomplete-item strong {
+        color: #0d6efd;
+    }
+    .autocomplete-item small {
+        color: #6c757d;
+        display: block;
+        margin-top: 0.25rem;
+    }
+    /* Autocomplete di dalam modal harus z-index lebih tinggi */
+    #nikAutocomplete {
+        z-index: 1055 !important;
+    }
+</style>
 @endpush

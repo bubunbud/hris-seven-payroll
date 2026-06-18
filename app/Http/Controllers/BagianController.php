@@ -305,3 +305,4 @@ class BagianController extends Controller
         ]);
     }
 }
+

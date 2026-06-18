@@ -153,11 +153,13 @@
             <a href="{{ route('absen.index', request()->query()) }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left me-2"></i>Kembali
             </a>
-            <button type="button" class="btn btn-primary" onclick="window.print()">
+            <button type="button" id="btnCetakAbsensi" class="btn btn-primary">
                 <i class="fas fa-print me-2"></i>Cetak
             </button>
         </div>
 
+        <!-- Printable area: di-render sebagai image agar PDF sulit dikonversi ke Excel -->
+        <div id="printable-absensi">
         <!-- Print Header -->
         <div class="print-header">
             <h3>Daftar Absensi Karyawan Per Periode</h3>
@@ -293,6 +295,7 @@
                 </tbody>
             </table>
         </div>
+        </div><!-- /#printable-absensi -->
 
         <!-- Legend -->
         <div class="mt-3 no-print">
@@ -332,11 +335,47 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>
     <script>
-        // Auto print saat halaman dimuat (opsional, bisa di-comment jika tidak diinginkan)
-        // window.onload = function() {
-        //     window.print();
-        // }
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('btnCetakAbsensi').addEventListener('click', function() {
+                var btn = this;
+                var originalHtml = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Memproses...';
+
+                var element = document.getElementById('printable-absensi');
+                html2canvas(element, {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false,
+                    letterRendering: true,
+                    allowTaint: true
+                }).then(function(canvas) {
+                    var imgData = canvas.toDataURL('image/png');
+                    var printWindow = window.open('', '_blank');
+                    printWindow.document.write(
+                        '<html><head><title>Cetak Browse Absensi</title>' +
+                        '<style>body{margin:0;padding:0;} img{width:100%;height:auto;display:block;}</style></head>' +
+                        '<body><img src="' + imgData + '" /></body></html>'
+                    );
+                    printWindow.document.close();
+                    printWindow.focus();
+                    setTimeout(function() {
+                        printWindow.print();
+                        printWindow.onafterprint = function() { printWindow.close(); };
+                    }, 250);
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }).catch(function(err) {
+                    console.error('html2canvas error:', err);
+                    alert('Gagal memproses. Mencoba cetak biasa...');
+                    window.print();
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                });
+            });
+        });
     </script>
 </body>
 </html>

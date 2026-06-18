@@ -241,15 +241,20 @@
                 ($closing->decUangMakan ?? 0) +
                 ($closing->decTransport ?? 0) +
                 ($closing->decPremi ?? 0) +
-                (($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0)) +
+                (($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0) + ($closing->decTotallembur4 ?? 0)) +
                 ($closing->decRapel ?? 0);
+
+                // Hitung Pot Lain-lain = decPotonganLain + decPotonganAbsen + decPotonganHC
+                $potLainLain = ($closing->decPotonganLain ?? 0) +
+                ($closing->decPotonganAbsen ?? 0) +
+                ($closing->decPotonganHC ?? 0);
 
                 // Hitung total potongan
                 $totalPotongan = ($closing->decPotonganBPJSKes ?? 0) +
                 ($closing->decPotonganBPJSJHT ?? 0) +
                 ($closing->decPotonganBPJSJP ?? 0) +
                 ($closing->decIuranSPN ?? 0) +
-                ($closing->decPotonganLain ?? 0) +
+                $potLainLain +
                 ($closing->decPotonganKoperasi ?? 0) +
                 ($closing->decPotonganBPR ?? 0);
 
@@ -275,7 +280,7 @@
                 $grandTotalBpjsNaker += ($closing->decPotonganBPJSJHT ?? 0);
                 $grandTotalBpjsPen += ($closing->decPotonganBPJSJP ?? 0);
                 $grandTotalIuranSpn += ($closing->decIuranSPN ?? 0);
-                $grandTotalPotLain += ($closing->decPotonganLain ?? 0);
+                $grandTotalPotLain += $potLainLain;
                 $grandTotalPotKoperasi += ($closing->decPotonganKoperasi ?? 0);
                 $grandTotalDplk += ($closing->decPotonganBPR ?? 0);
                 $grandTotalJumlah += $jumlah;
@@ -302,7 +307,7 @@
                     <td class="text-right">{{ number_format($closing->decPotonganBPJSJHT ?? 0, 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($closing->decPotonganBPJSJP ?? 0, 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($closing->decIuranSPN ?? 0, 0, ',', '.') }}</td>
-                    <td class="text-right">{{ number_format($closing->decPotonganLain ?? 0, 0, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($potLainLain, 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($closing->decPotonganKoperasi ?? 0, 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($closing->decPotonganBPR ?? 0, 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($jumlah, 0, ',', '.') }}</td>

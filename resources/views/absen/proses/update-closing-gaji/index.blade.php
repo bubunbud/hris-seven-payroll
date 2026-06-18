@@ -77,7 +77,8 @@
                                 @php
                                 $totalPenerimaan = $row->decGapok + $row->decUangMakan + $row->decTransport +
                                 $row->decPremi + $row->decTotallembur1 + $row->decTotallembur2 +
-                                $row->decTotallembur3 + $row->decRapel;
+                                $row->decTotallembur3 + ($row->decTotallembur4 ?? 0) + $row->decRapel
+                                + (float)($row->decTunjanganJabatan ?? 0);
                                 $totalPotongan = $row->decPotonganBPJSKes + $row->decPotonganBPJSJHT +
                                 $row->decPotonganBPJSJP + $row->decIuranSPN +
                                 $row->decPotonganKoperasi + $row->decPotonganBPR +
@@ -388,6 +389,14 @@
                                             </div>
                                         </div>
                                     </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="decTunjanganJabatan" class="form-label">Tunjangan Jabatan</label>
+                                                <input type="number" class="form-control" id="decTunjanganJabatan" name="decTunjanganJabatan" step="0.01" min="0">
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -523,7 +532,8 @@
                             </h2>
                             <div id="lembur" class="accordion-collapse collapse" data-bs-parent="#closingAccordion">
                                 <div class="accordion-body">
-                                    <h6 class="mb-3">Lembur Hari Kerja</h6>
+                                    <h6 class="mb-2">Lembur Hari Kerja</h6>
+                                    <p class="text-muted small mb-3">Perhitungan otomatis closing (HKN per hari): J1 maks 1 jam ×1,5; <strong>J2 maks 8 jam</strong> ×2; J3 maks 1 jam ×3; J4 sisa ×4. Kolom di bawah berisi <strong>jumlah akumulasi periode</strong> (bukan batas per hari).</p>
                                     <!-- Row pertama: Jam Lembur Kerja 1, 2, 3 -->
                                     <div class="row mb-3">
                                         <div class="col-md-4">
@@ -534,7 +544,7 @@
                                         </div>
                                         <div class="col-md-4">
                                             <div class="mb-3">
-                                                <label for="decJamLemburKerja2" class="form-label">Jam Lembur Kerja 2</label>
+                                                <label for="decJamLemburKerja2" class="form-label">Jam Lembur Kerja 2 <span class="text-muted small">(tier 2×, maks 8 jam/hari HKN)</span></label>
                                                 <input type="number" class="form-control" id="decJamLemburKerja2" name="decJamLemburKerja2" step="0.01" min="0">
                                             </div>
                                         </div>
@@ -1029,7 +1039,7 @@
         const nominalKerja1 = jamKerja1 * 1.5 * ratePerJam;
         document.getElementById('decLemburKerja1').value = nominalKerja1.toFixed(2);
 
-        // Hitung nominal lembur kerja 2
+        // Hitung nominal lembur kerja 2 (HKN: 2×; per hari maks 8 jam tier ini — field = akumulasi periode)
         const jamKerja2 = parseFloat(document.getElementById('decJamLemburKerja2').value) || 0;
         const nominalKerja2 = jamKerja2 * 2 * ratePerJam;
         document.getElementById('decLemburKerja2').value = nominalKerja2.toFixed(2);

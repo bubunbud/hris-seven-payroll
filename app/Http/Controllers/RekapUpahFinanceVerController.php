@@ -6,9 +6,11 @@ use App\Models\Closing;
 use App\Models\Divisi;
 use App\Models\Departemen;
 use App\Models\Bagian;
+use App\Exports\RekapUpahFinanceVerExport;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Maatwebsite\Excel\Facades\Excel;
 
 class RekapUpahFinanceVerController extends Controller
 {
@@ -179,6 +181,23 @@ class RekapUpahFinanceVerController extends Controller
     }
 
     /**
+     * Jam lembur per tier (selaras closing: J3 = HKN tier 3 + maks 1 jam libur 3×; J4 = HKN tier 4 + sisa jam libur 4×).
+     *
+     * @return array{jm1: float, jm2: float, jm3: float, jm4: float}
+     */
+    private function closingJamTiers($closing): array
+    {
+        $libur3 = (float)($closing->decJamLemburLibur3 ?? 0);
+
+        return [
+            'jm1' => round((float)($closing->decJamLemburKerja1 ?? 0), 1),
+            'jm2' => round((float)($closing->decJamLemburKerja2 ?? 0) + (float)($closing->decJamLemburLibur2 ?? 0), 1),
+            'jm3' => round((float)($closing->decJamLemburKerja3 ?? 0) + min(1.0, $libur3), 1),
+            'jm4' => round((float)($closing->decJamLemburKerja4 ?? 0) + max(0.0, $libur3 - 1.0), 1),
+        ];
+    }
+
+    /**
      * Calculate total untuk collection of closings
      */
     private function calculateTotal($closings)
@@ -190,6 +209,7 @@ class RekapUpahFinanceVerController extends Controller
             'jm1' => 0,
             'jm2' => 0,
             'jm3' => 0,
+            'jm4' => 0,
             'lembur' => 0,
             'uang_makan_transport' => 0,
             'bpjs_kes' => 0,
@@ -210,7 +230,8 @@ class RekapUpahFinanceVerController extends Controller
             $selisihUpah = $closing->decRapel ?? 0;
             $lembur = ($closing->decTotallembur1 ?? 0) + 
                       ($closing->decTotallembur2 ?? 0) + 
-                      ($closing->decTotallembur3 ?? 0);
+                      ($closing->decTotallembur3 ?? 0) +
+                      ($closing->decTotallembur4 ?? 0);
             $uangMakanTransport = ($closing->decUangMakan ?? 0) + ($closing->decTransport ?? 0);
             
             // Gunakan decPotonganBPJS* karena field ini yang selalu terisi di database
@@ -230,17 +251,15 @@ class RekapUpahFinanceVerController extends Controller
             // TAKEHOMEPAY = Penerimaan - (BPJS KES + BPJS NAKER + BPJS PENSIUN + TDK HDR/HC + KOPERASI + POT. SPN + POT. DPLK + POT. LAIN-LAIN)
             $takehomepay = $penerimaan - ($bpjsKes + $bpjsNaker + $bpjsPensiun + $tdkHdrHc + $koperasi + $potSpn + $potDplk + $potLainLain);
 
-            // Format JM dengan 1 desimal
-            $jm1 = round($closing->decJamLemburKerja1 ?? 0, 1);
-            $jm2 = round($closing->decJamLemburKerja2 ?? 0, 1);
-            $jm3 = round($closing->decJamLemburKerja3 ?? 0, 1);
+            $tiers = $this->closingJamTiers($closing);
 
             $total['premi'] += $premi;
             $total['gaji'] += $gaji;
             $total['selisih_upah'] += $selisihUpah;
-            $total['jm1'] += $jm1;
-            $total['jm2'] += $jm2;
-            $total['jm3'] += $jm3;
+            $total['jm1'] += $tiers['jm1'];
+            $total['jm2'] += $tiers['jm2'];
+            $total['jm3'] += $tiers['jm3'];
+            $total['jm4'] += $tiers['jm4'];
             $total['lembur'] += $lembur;
             $total['uang_makan_transport'] += $uangMakanTransport;
             $total['bpjs_kes'] += $bpjsKes;
@@ -267,7 +286,7 @@ class RekapUpahFinanceVerController extends Controller
     }
 
     /**
-     * Export rekap upah finance ver ke Excel
+     * Export rekap upah finance ver ke Excel menggunakan Laravel Excel
      */
     public function exportExcel(Request $request)
     {
@@ -300,10 +319,6 @@ class RekapUpahFinanceVerController extends Controller
                 ->with('error', 'Tidak ada data untuk periode yang dipilih');
         }
 
-        // Ambil tanggal awal dan akhir dari data pertama
-        $tanggalAwal = $closings->first()->vcPeriodeAwal;
-        $tanggalAkhir = $closings->first()->vcPeriodeAkhir;
-
         // Group data secara hierarkis
         $groupedData = $this->groupDataHierarchically($closings);
 
@@ -317,262 +332,14 @@ class RekapUpahFinanceVerController extends Controller
         }
         $namaDivisi = $divisiData ? $divisiData->vcNamaDivisi : '';
 
-        // Generate Excel content menggunakan format TSV (Tab Separated Values) untuk Excel
-        $filename = 'Rekap_Upah_Finance_Ver_' . Carbon::parse($tanggalPeriode)->format('Ymd') . '.xls';
+        // Generate filename
+        $filename = 'Rekap_Upah_Finance_Ver_' . Carbon::parse($tanggalPeriode)->format('Ymd') . '.xlsx';
 
-        $headers = [
-            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        ];
-
-        $callback = function () use ($groupedData, $grandTotal, $tanggalAwal, $tanggalAkhir, $namaDivisi, $kodeDivisi, $tanggalPeriode) {
-            $file = fopen('php://output', 'w');
-
-            // Add BOM for UTF-8
-            fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
-
-            // Header
-            $this->putCsvLine($file, ['REKAPITULASI UPAH KARYAWAN']);
-            if ($kodeDivisi && $kodeDivisi != 'SEMUA') {
-                $this->putCsvLine($file, [$kodeDivisi . ' -> ' . $namaDivisi]);
-            } else {
-                $this->putCsvLine($file, ['SEMUA DIVISI']);
-            }
-            $this->putCsvLine($file, ['Periode: ' . Carbon::parse($tanggalPeriode)->format('d F Y')]);
-            $this->putCsvLine($file, []); // Empty row
-
-            // Column headers
-            $this->putCsvLine($file, [
-                'No',
-                'NIK',
-                'NAMA',
-                'GOL',
-                'PREMI',
-                'GAJI',
-                'TSM',
-                'JM1',
-                'JM2',
-                'JM3',
-                'SELISIH UPAH',
-                'LEMBUR',
-                'Uang Makan + Transport',
-                'BPJS KES',
-                'BPJS NAKER',
-                'BPJS PENSIUN',
-                'TDK HDR/HC',
-                'KOPERASI',
-                'POT. SPN',
-                'POT. DPLK',
-                'POT. LAIN-LAIN',
-                'PENERIMAAN',
-                'TAKEHOMEPAY'
-            ]);
-
-            // Data rows
-            $no = 1;
-            foreach ($groupedData as $divisiKode => $divisiData) {
-                foreach ($divisiData['departemens'] as $deptKode => $deptData) {
-                    // Header Departemen (23 kolom untuk alignment)
-                    $deptHeader = array_fill(0, 23, '');
-                    $deptHeader[0] = 'Dept. ' . $deptData['nama'];
-                    $this->putCsvLine($file, $deptHeader);
-                    
-                    foreach ($deptData['bagians'] as $bagianKode => $bagianData) {
-                        if (count($bagianData['closings']) > 0) {
-                            // Header Bagian (23 kolom untuk alignment)
-                            $bagianHeader = array_fill(0, 23, '');
-                            $bagianHeader[0] = 'Bagia ' . $bagianData['nama'];
-                            $this->putCsvLine($file, $bagianHeader);
-                            
-                            foreach ($bagianData['closings'] as $closing) {
-                                $karyawan = $closing->karyawan;
-                                if (!$karyawan) continue;
-
-                                // Mapping field sesuai ketentuan
-                                $premi = $closing->decPremi ?? 0;
-                                $gaji = $closing->decGapok ?? 0;
-                                $selisihUpah = $closing->decRapel ?? 0;
-                                // Format JM dengan 1 desimal
-                                $jm1 = round($closing->decJamLemburKerja1 ?? 0, 1);
-                                $jm2 = round($closing->decJamLemburKerja2 ?? 0, 1);
-                                $jm3 = round($closing->decJamLemburKerja3 ?? 0, 1);
-                                $lembur = ($closing->decTotallembur1 ?? 0) + 
-                                          ($closing->decTotallembur2 ?? 0) + 
-                                          ($closing->decTotallembur3 ?? 0);
-                                $uangMakanTransport = ($closing->decUangMakan ?? 0) + ($closing->decTransport ?? 0);
-                                
-                                // Gunakan decPotonganBPJS* karena field ini yang selalu terisi di database
-                                // decBpjs* mungkin tidak terisi di beberapa data lama
-                                $bpjsKes = $closing->decPotonganBPJSKes ?? $closing->decBpjsKesehatan ?? 0;
-                                $bpjsNaker = $closing->decPotonganBPJSJHT ?? $closing->decBpjsNaker ?? 0;
-                                $bpjsPensiun = $closing->decPotonganBPJSJP ?? $closing->decBpjsPensiun ?? 0;
-                                $tdkHdrHc = ($closing->decPotonganAbsen ?? 0) + ($closing->decPotonganHC ?? 0);
-                                $koperasi = $closing->decPotonganKoperasi ?? 0;
-                                $potSpn = $closing->decIuranSPN ?? 0;
-                                $potDplk = $closing->decPotonganBPR ?? 0;
-                                $potLainLain = $closing->decPotonganLain ?? 0;
-
-                                // Penerimaan = Premi + Gaji + Selisih Upah + Lembur + Tot Uang Makan & Transport
-                                $penerimaan = $premi + $gaji + $selisihUpah + $lembur + $uangMakanTransport;
-
-                                // TAKEHOMEPAY = Penerimaan - (BPJS KES + BPJS NAKER + BPJS PENSIUN + TDK HDR/HC + KOPERASI + POT. SPN + POT. DPLK + POT. LAIN-LAIN)
-                                $takehomepay = $penerimaan - ($bpjsKes + $bpjsNaker + $bpjsPensiun + $tdkHdrHc + $koperasi + $potSpn + $potDplk + $potLainLain);
-
-                                $this->putCsvLine($file, [
-                                    $no++,
-                                    $closing->vcNik,
-                                    $karyawan->Nama ?? '',
-                                    $closing->vcKodeGolongan ?? '',
-                                    $premi,
-                                    $gaji,
-                                    0,
-                                    $jm1,
-                                    $jm2,
-                                    $jm3,
-                                    $selisihUpah,
-                                    $lembur,
-                                    $uangMakanTransport,
-                                    $bpjsKes,
-                                    $bpjsNaker,
-                                    $bpjsPensiun,
-                                    $tdkHdrHc,
-                                    $koperasi,
-                                    $potSpn,
-                                    $potDplk,
-                                    $potLainLain,
-                                    $penerimaan,
-                                    $takehomepay
-                                ]);
-                            }
-
-                            // Total Bagian
-                            $bagianTotal = $bagianData['total'];
-                            $this->putCsvLine($file, [
-                                '',
-                                '',
-                                'Total Bag. ' . $bagianData['nama'],
-                                '',
-                                $bagianTotal['premi'],
-                                $bagianTotal['gaji'],
-                                0,
-                                $bagianTotal['jm1'],
-                                $bagianTotal['jm2'],
-                                $bagianTotal['jm3'],
-                                $bagianTotal['selisih_upah'],
-                                $bagianTotal['lembur'],
-                                $bagianTotal['uang_makan_transport'],
-                                $bagianTotal['bpjs_kes'],
-                                $bagianTotal['bpjs_naker'],
-                                $bagianTotal['bpjs_pensiun'],
-                                $bagianTotal['tdk_hdr_hc'],
-                                $bagianTotal['koperasi'],
-                                $bagianTotal['pot_spn'],
-                                $bagianTotal['pot_dplk'],
-                                $bagianTotal['pot_lain_lain'],
-                                $bagianTotal['penerimaan'],
-                                $bagianTotal['takehomepay']
-                            ]);
-                        }
-                    }
-
-                    // Total Departemen
-                    $deptTotal = $deptData['total'];
-                    $this->putCsvLine($file, [
-                        '',
-                        '',
-                        'Total Dept. ' . $deptData['nama'],
-                        '',
-                        $deptTotal['premi'],
-                        $deptTotal['gaji'],
-                        0,
-                        $deptTotal['jm1'],
-                        $deptTotal['jm2'],
-                        $deptTotal['jm3'],
-                        $deptTotal['selisih_upah'],
-                        $deptTotal['lembur'],
-                        $deptTotal['uang_makan_transport'],
-                        $deptTotal['bpjs_kes'],
-                        $deptTotal['bpjs_naker'],
-                        $deptTotal['bpjs_pensiun'],
-                        $deptTotal['tdk_hdr_hc'],
-                        $deptTotal['koperasi'],
-                        $deptTotal['pot_spn'],
-                        $deptTotal['pot_dplk'],
-                        $deptTotal['pot_lain_lain'],
-                        $deptTotal['penerimaan'],
-                        $deptTotal['takehomepay']
-                    ]);
-                }
-            }
-
-            // Grand Total
-            $this->putCsvLine($file, [
-                '',
-                '',
-                'GRAND TOTAL',
-                '',
-                $grandTotal['premi'],
-                $grandTotal['gaji'],
-                0,
-                $grandTotal['jm1'],
-                $grandTotal['jm2'],
-                $grandTotal['jm3'],
-                $grandTotal['selisih_upah'],
-                $grandTotal['lembur'],
-                $grandTotal['uang_makan_transport'],
-                $grandTotal['bpjs_kes'],
-                $grandTotal['bpjs_naker'],
-                $grandTotal['bpjs_pensiun'],
-                $grandTotal['tdk_hdr_hc'],
-                $grandTotal['koperasi'],
-                $grandTotal['pot_spn'],
-                $grandTotal['pot_dplk'],
-                $grandTotal['pot_lain_lain'],
-                $grandTotal['penerimaan'],
-                $grandTotal['takehomepay']
-            ]);
-
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
-    }
-
-    /**
-     * Helper function untuk menulis CSV line dengan tab separator untuk Excel
-     */
-    private function putCsvLine($file, $data)
-    {
-        // Gunakan tab sebagai separator untuk Excel (lebih universal)
-        $line = [];
-        foreach ($data as $field) {
-            // Jika field adalah angka, gunakan nilai langsung tanpa format
-            if (is_numeric($field)) {
-                // Konversi ke float untuk memastikan format desimal benar
-                $field = (float) $field;
-                // Format dengan titik sebagai desimal (format standar untuk Excel)
-                // Jika desimal 0, tampilkan tanpa desimal untuk integer
-                if ($field == floor($field)) {
-                    $field = (int) $field;
-                } else {
-                    // Untuk desimal, gunakan format dengan 1-2 desimal
-                    $field = number_format($field, 2, '.', '');
-                    // Hapus trailing zero
-                    $field = rtrim(rtrim($field, '0'), '.');
-                }
-            } else {
-                // Convert ke string dan escape tab/newline
-                $field = (string) $field;
-                // Replace tab dengan space, newline dengan space
-                $field = str_replace(["\t", "\n", "\r"], [' ', ' ', ' '], $field);
-                // Jika mengandung tab atau newline atau koma, wrap dengan quotes
-                if (strpos($field, "\t") !== false || strpos($field, "\n") !== false || strpos($field, '"') !== false) {
-                    $field = '"' . str_replace('"', '""', $field) . '"';
-                }
-            }
-            $line[] = $field;
-        }
-        fwrite($file, implode("\t", $line) . "\n");
+        // Export menggunakan Laravel Excel
+        return Excel::download(
+            new RekapUpahFinanceVerExport($groupedData, $grandTotal, $tanggalPeriode, $namaDivisi, $kodeDivisi),
+            $filename
+        );
     }
 }
 

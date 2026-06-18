@@ -277,13 +277,15 @@ class RekapUpahPerBagianDeptController extends Controller
             $total['premi'] += $closing->decPremi ?? 0;
             $total['gaji'] += $closing->decGapok ?? 0;
             $total['tsm'] += 0; // TSM selalu 0
-            $total['jam_lembur_jm1'] += $closing->decJamLemburKerja1 ?? 0;
-            $total['jam_lembur_jm2'] += ($closing->decJamLemburKerja2 ?? 0) + ($closing->decJamLemburLibur2 ?? 0);
-            $total['jam_lembur_jm3'] += ($closing->decJamLemburKerja3 ?? 0) + ($closing->decJamLemburLibur3 ?? 0);
-            $total['jam_lembur_jm4'] += 0; // JM4 belum ada di database, default 0
+            $total['jam_lembur_jm1'] += (float)($closing->decJamLemburKerja1 ?? 0);
+            $total['jam_lembur_jm2'] += (float)($closing->decJamLemburKerja2 ?? 0) + (float)($closing->decJamLemburLibur2 ?? 0);
+            $libur3 = (float)($closing->decJamLemburLibur3 ?? 0);
+            $total['jam_lembur_jm3'] += (float)($closing->decJamLemburKerja3 ?? 0) + min(1.0, $libur3);
+            $jamLibur4x = max(0.0, $libur3 - 1.0);
+            $total['jam_lembur_jm4'] += (float)($closing->decJamLemburKerja4 ?? 0) + $jamLibur4x;
             $total['selisih_upah'] += $closing->decRapel ?? 0;
 
-            $upahLembur = ($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0);
+            $upahLembur = ($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0) + ($closing->decTotallembur4 ?? 0);
             $total['upah_lembur'] += $upahLembur;
 
             $total['pot_bpjs_kes'] += $closing->decPotonganBPJSKes ?? 0;
@@ -292,10 +294,11 @@ class RekapUpahPerBagianDeptController extends Controller
             $total['pot_tdk_hdr_hc'] += ($closing->decPotonganAbsen ?? 0) + ($closing->decPotonganHC ?? 0);
             $total['pot_lain_lain'] += $closing->decPotonganLain ?? 0;
 
-            // General Total = Premi + Gaji + Selisih Upah + Upah Lembur
+            // General Total = Premi + Gaji + Selisih Upah + Tunjangan Jabatan + Upah Lembur
             $generalTotal = ($closing->decPremi ?? 0) +
                 ($closing->decGapok ?? 0) +
                 ($closing->decRapel ?? 0) +
+                ($closing->decTunjanganJabatan ?? 0) +
                 $upahLembur;
             $total['general_total'] += $generalTotal;
 

@@ -139,6 +139,12 @@ class Karyawan extends Model
         return $this->belongsTo(Jabatan::class, 'Jabat', 'vcKodeJabatan');
     }
 
+    // Relasi sebagai pengaju instruksi kerja lembur
+    public function instruksiDiajukan()
+    {
+        return $this->hasMany(LemburHeader::class, 'vcDiajukanOleh', 'Nik');
+    }
+
     // Relationship dengan Keluarga
     public function keluarga()
     {

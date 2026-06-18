@@ -75,6 +75,7 @@
                         <div class="card-body" style="max-height: 500px; overflow-y: auto;">
                             @php
                             $moduleLabels = [
+                            'dashboard' => 'Dashboard',
                             'master-data' => 'Master Data',
                             'absensi' => 'Absensi',
                             'proses-gaji' => 'Proses Payroll',

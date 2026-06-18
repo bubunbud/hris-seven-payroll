@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('t_override_jadwal_security')) {
+            return;
+        }
+
         Schema::create('t_override_jadwal_security', function (Blueprint $table) {
             $table->id();
             $table->string('vcNik', 8)->comment('NIK Satpam');

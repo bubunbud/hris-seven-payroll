@@ -2,6 +2,10 @@
 
 @section('title', 'Instruksi Kerja Lembur - HRIS Seven Payroll')
 
+@push('styles')
+<link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/webfonts/fa-solid-900.woff2" as="font" type="font/woff2" crossorigin>
+@endpush
+
 @section('content')
 <div class="container-fluid">
     <div class="row">
@@ -31,10 +35,21 @@
                                 <input type="date" class="form-control" id="sampai_tanggal" name="sampai_tanggal" value="{{ $endDate }}">
                             </div>
                             <div class="col-md-3">
-                                <label for="nik" class="form-label">NIK</label>
-                                <input type="text" class="form-control" id="nik" name="nik" value="{{ $nik }}" placeholder="Cari NIK">
+                                <label for="search" class="form-label">NIK / Nama</label>
+                                <div class="position-relative">
+                                    <input type="text"
+                                        class="form-control"
+                                        id="search"
+                                        name="search"
+                                        value="{{ $search ?? '' }}"
+                                        placeholder="Cari NIK atau Nama (pisahkan dengan koma)"
+                                        autocomplete="off">
+                                    <div id="searchAutocomplete" class="autocomplete-dropdown" style="display: none;"></div>
+                                </div>
+                                <small class="text-muted">Ketik NIK atau nama karyawan untuk mencari (bisa multiple, pisahkan dengan koma)</small>
                             </div>
-                            <div class="col-md-3 d-flex align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label">&nbsp;</label>
                                 <button type="submit" class="btn btn-primary w-100 shadow-sm">
                                     <i class="fas fa-eye me-2"></i>Preview
                                 </button>
@@ -90,15 +105,15 @@
                                         @endif
                                     </td>
                                     <td>
-                                        <div class="btn-group btn-group-sm">
-                                            <button class="btn btn-outline-primary" onclick="editRecord('{{ $row->vcCounter }}')" title="Edit">
-                                                <i class="fas fa-edit"></i>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button type="button" class="btn btn-outline-primary" onclick="editRecord('{{ $row->vcCounter }}')" title="Edit">
+                                                <i class="fas fa-edit"></i> Edit
                                             </button>
-                                            <button class="btn btn-outline-info" onclick="viewRecord('{{ $row->vcCounter }}')" title="Detail">
-                                                <i class="fas fa-eye"></i>
+                                            <button type="button" class="btn btn-outline-info" onclick="viewRecord('{{ $row->vcCounter }}')" title="Detail">
+                                                <i class="fas fa-eye"></i> View
                                             </button>
-                                            <button class="btn btn-outline-danger" onclick="deleteRecord('{{ $row->vcCounter }}')" title="Hapus">
-                                                <i class="fas fa-trash"></i>
+                                            <button type="button" class="btn btn-outline-danger" onclick="deleteRecord('{{ $row->vcCounter }}')" title="Hapus">
+                                                <i class="fas fa-trash"></i> Delete
                                             </button>
                                         </div>
                                     </td>
@@ -131,6 +146,64 @@
     </div>
 </div>
 
+<style>
+    /* Pastikan detail row tidak wrap dan lebih compact */
+    .detail-row {
+        flex-wrap: nowrap !important;
+    }
+
+    .detail-row .col-md-1,
+    .detail-row .col-md-2,
+    .detail-row .col-md-3 {
+        padding-left: 0.25rem;
+        padding-right: 0.25rem;
+    }
+
+    .detail-row .form-label {
+        font-size: 0.75rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .detail-row .form-control-sm,
+    .detail-row .form-select-sm {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+
+    @media (min-width: 768px) {
+        .detail-row .col-deskripsi-wide {
+            flex: 0 0 17%;
+            max-width: 17%;
+        }
+
+        .detail-row .col-penanggung-shrink,
+        .detail-row .col-nominal-shrink {
+            flex: 0 0 11.5%;
+            max-width: 11.5%;
+        }
+
+        .detail-row .col-durasi-shrink {
+            flex: 0 0 7%;
+            max-width: 7%;
+        }
+
+        .detail-row .col-istirahat-shrink {
+            flex: 0 0 7%;
+            max-width: 7%;
+        }
+    }
+
+    /* Icon untuk tombol aksi */
+    .btn-group-sm .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .btn-group-sm .btn i {
+        margin-right: 0.25rem;
+    }
+</style>
+
 <!-- Modal Form -->
 <div class="modal fade" id="lemburModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-xl">
@@ -139,7 +212,7 @@
                 <h5 class="modal-title" id="lemburModalLabel">Tambah Instruksi Kerja Lembur</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form id="lemburForm">
+            <form id="lemburForm" novalidate>
                 <input type="hidden" name="_method" id="_method" value="POST">
                 <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                     <!-- Header Section -->
@@ -195,6 +268,17 @@
                                     <input type="text" class="form-control" id="vcKepalaDept" name="vcKepalaDept" readonly style="background-color: #e9ecef;" placeholder="Otomatis terisi dari Departemen">
                                 </div>
 
+                                <!-- Row 2.5: Free Role Checkbox -->
+                                <div class="col-12">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="freeRoleEnabled" name="freeRoleEnabled" value="1">
+                                        <label class="form-check-label" for="freeRoleEnabled">
+                                            <strong>Free Role Enabled</strong> - Bebas memberikan instruksi lembur kepada karyawan dari divisi/departemen/bagian manapun tanpa pembatasan
+                                        </label>
+                                    </div>
+                                    <small class="text-muted">Jika dicentang, kolom detail dapat memilih karyawan dari semua divisi/departemen/bagian, tidak terbatas pada divisi/departemen/bagian yang dipilih di header.</small>
+                                </div>
+
                                 <!-- Row 3: Tanggal Lembur, Jenis Lembur -->
                                 <div class="col-md-4">
                                     <label for="dtTanggalLembur" class="form-label">Tanggal Lembur <span class="text-danger">*</span></label>
@@ -241,14 +325,14 @@
 
 <!-- Modal View Detail -->
 <div class="modal fade" id="viewModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
+            <div class="modal-header pb-2">
                 <h5 class="modal-title">Detail Instruksi Kerja Lembur</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="viewModalBody">
-                <!-- Content akan diisi oleh JavaScript -->
+            <div class="modal-body">
+                <div id="viewModalBody"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
@@ -260,6 +344,21 @@
 
 @push('scripts')
 <script>
+    // Base path untuk subfolder support
+    const fullUrl = '{{ url("/") }}';
+    // Hanya ambil path (tanpa domain/port) agar kompatibel di localhost dan server
+    const basePath = fullUrl.replace(/^https?:\/\/[^\/]+/, '') || '';
+    // // console.log disabled for performance // Disabled for performance
+
+    function makeUrl(path) {
+        const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+        if (!basePath) {
+            return `/${cleanPath}`;
+        }
+        const cleanBase = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
+        return `${cleanBase}/${cleanPath}`;
+    }
+
     let isEditMode = false;
     let currentId = null;
     let detailIndex = 0;
@@ -268,6 +367,363 @@
     const divisiSelect = document.getElementById('vcKodeDivisi');
     const departemenSelect = document.getElementById('vcKodeDept');
     const bagianSelect = document.getElementById('vcKodeBagian');
+    const freeRoleCheckbox = document.getElementById('freeRoleEnabled');
+
+    // Global functions untuk onclick handlers
+    function editRecord(id) {
+        if (!id) {
+            console.error('editRecord: ID tidak valid', id);
+            if (typeof showAlert === 'function') {
+                showAlert('error', 'ID tidak valid');
+            } else {
+                alert('ID tidak valid');
+            }
+            return;
+        }
+
+        // // console.log disabled for performance // Disabled for performance
+        
+        fetch(makeUrl(`instruksi-kerja-lembur/${id}`), {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+            .then(r => {
+                if (!r.ok) {
+                    throw new Error(`HTTP error! status: ${r.status}`);
+                }
+                return r.json();
+            })
+            .then(data => {
+                // // console.log disabled for performance // Disabled for performance
+                if (data.success) {
+                    isEditMode = true;
+                    currentId = id;
+                    detailIndex = 0;
+                    document.getElementById('lemburModalLabel').textContent = 'Edit Instruksi Kerja Lembur';
+                    document.getElementById('_method').value = 'PUT';
+
+                    const rec = data.record;
+
+                    if (freeRoleCheckbox) {
+                        freeRoleCheckbox.checked = !!rec.is_free_role;
+                        freeRoleCheckbox.dispatchEvent(new Event('change'));
+                    }
+
+                    // Set divisi first, then trigger change to load departemens
+                    if (rec.vcKodeDivisi && divisiSelect) {
+                        divisiSelect.value = rec.vcKodeDivisi;
+
+                        // Load departemens dengan callback untuk set value setelah ter-load
+                        if (typeof loadDepartemens === 'function') {
+                            loadDepartemens(rec.vcKodeDivisi, function() {
+                                // Set departemen setelah departemen ter-load
+                                if (rec.vcKodeDept && departemenSelect) {
+                                    departemenSelect.value = rec.vcKodeDept;
+
+                                    // Load kepala departemen setelah departemen ter-set
+                                    if (rec.vcKodeDept && typeof loadKepalaDept === 'function') {
+                                        loadKepalaDept(rec.vcKodeDept);
+                                    }
+
+                                    // Load bagians dengan callback untuk set value setelah ter-load
+                                    if (typeof loadBagians === 'function') {
+                                        loadBagians(rec.vcKodeDivisi, rec.vcKodeDept, function() {
+                                            // Set bagian setelah bagian ter-load
+                                            if (rec.vcKodeBagian && bagianSelect) {
+                                                bagianSelect.value = rec.vcKodeBagian;
+                                                // Trigger change untuk load karyawan
+                                                bagianSelect.dispatchEvent(new Event('change'));
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                    }
+
+                    const dtTanggalLembur = document.getElementById('dtTanggalLembur');
+                    const vcJenisLembur = document.getElementById('vcJenisLembur');
+                    const vcAlasanDasarLembur = document.getElementById('vcAlasanDasarLembur');
+                    if (dtTanggalLembur) dtTanggalLembur.value = rec.dtTanggalLembur || '';
+                    if (vcJenisLembur) vcJenisLembur.value = rec.vcJenisLembur || '';
+                    if (vcAlasanDasarLembur) vcAlasanDasarLembur.value = rec.vcAlasanDasarLembur || '';
+
+                    // Set Jabatan Pengaju
+                    const jabatanPengajuDisplay = document.getElementById('vcJabatanPengaju_display');
+                    const jabatanPengajuInput = document.getElementById('vcJabatanPengaju');
+                    if (jabatanPengajuInput) {
+                        jabatanPengajuInput.value = rec.vcJabatanPengaju || '';
+                    }
+                    if (jabatanPengajuDisplay) {
+                        jabatanPengajuDisplay.value = rec.vcJabatanPengajuNama ? `${rec.vcJabatanPengajuNama} (${rec.vcJabatanPengaju || '-'})` : (rec.vcJabatanPengaju || '');
+                    }
+
+                    // Set Kepala Departemen
+                    const kepalaDeptInput = document.getElementById('vcKepalaDept');
+                    if (kepalaDeptInput && rec.vcKepalaDept) {
+                        kepalaDeptInput.value = rec.vcKepalaDept;
+                    }
+
+                    // Set "Diajukan Oleh" dengan update search input juga
+                    const diajukanOlehSelect = document.getElementById('vcDiajukanOleh');
+                    const diajukanOlehSearch = document.getElementById('vcDiajukanOleh_search');
+                    if (diajukanOlehSelect) {
+                        diajukanOlehSelect.value = rec.vcDiajukanOleh || '';
+                        // Trigger supaya hook pengisian otomatis tetap berjalan
+                        diajukanOlehSelect.dispatchEvent(new Event('change', {
+                            bubbles: true
+                        }));
+                    }
+                    if (diajukanOlehSearch) {
+                        diajukanOlehSearch.value = rec.vcDiajukanOleh ?
+                            `${rec.vcDiajukanOleh}${rec.namaPengaju ? ' - ' + rec.namaPengaju : ''}` :
+                            '';
+                    }
+
+                    // Clear detail container dan reset detailIndex
+                    const detailContainer = document.getElementById('detailContainer');
+                    if (detailContainer) {
+                        detailContainer.innerHTML = '';
+                    }
+                    // Reset detailIndex untuk memastikan index dimulai dari 0
+                    detailIndex = 0;
+
+                    // Simpan detail data untuk di-load setelah bagian ter-load
+                    const detailDataToLoad = rec.details && rec.details.length > 0 ? rec.details : [];
+
+                    // Function untuk load detail setelah bagian dan karyawan ter-load
+                    function loadDetailsAfterKaryawanLoaded() {
+                        if (detailDataToLoad.length > 0) {
+                            detailDataToLoad.forEach((detail, idx) => {
+                                // Tambahkan delay kecil untuk setiap row agar tidak conflict
+                                setTimeout(() => {
+                                    if (typeof addDetailRow === 'function') {
+                                        addDetailRow({
+                                            vcNik: detail.vcNik,
+                                            vcNamaKaryawan: detail.vcNamaKaryawan,
+                                            vcKodeJabatan: detail.vcKodeJabatan,
+                                            dtJamMulaiLembur: detail.dtJamMulaiLembur,
+                                            dtJamSelesaiLembur: detail.dtJamSelesaiLembur,
+                                            decDurasiLembur: detail.decDurasiLembur,
+                                            intDurasiIstirahat: detail.intDurasiIstirahat,
+                                            vcDeskripsiLembur: detail.vcDeskripsiLembur,
+                                            vcPenanggungBebanLembur: detail.vcPenanggungBebanLembur,
+                                            vcPenanggungBebanLainnya: detail.vcPenanggungBebanLainnya,
+                                            decLemburExternal: detail.decLemburExternal
+                                        });
+                                    }
+                                }, idx * 100); // Delay 100ms per row
+                            });
+                        } else {
+                            if (typeof addDetailRow === 'function') {
+                                addDetailRow();
+                            }
+                        }
+                    }
+
+                    // Jika bagian sudah di-set, tunggu bagian ter-load dan trigger load karyawan, baru load detail
+                    // Tunggu divisi ter-load sebelum load detail rows
+                    // Pastikan divisi sudah ter-set dan karyawan sudah ter-load untuk semua row
+                    if (rec.vcKodeDivisi) {
+                        const detailLoadDelay = rec.is_free_role ? 400 : 1500;
+                        setTimeout(() => {
+                            loadDetailsAfterKaryawanLoaded();
+                        }, detailLoadDelay);
+                    } else {
+                        // Jika tidak ada divisi, langsung load detail (tapi akan disabled)
+                        loadDetailsAfterKaryawanLoaded();
+                    }
+
+                    const lemburModal = document.getElementById('lemburModal');
+                    if (lemburModal) {
+                        new bootstrap.Modal(lemburModal).show();
+                    }
+                } else {
+                    console.error('editRecord: Response tidak berhasil', data);
+                    if (typeof showAlert === 'function') {
+                        showAlert('error', data.message || 'Gagal memuat data');
+                    } else {
+                        alert(data.message || 'Gagal memuat data');
+                    }
+                }
+            })
+            .catch(err => {
+                console.error('editRecord: Error', err);
+                if (typeof showAlert === 'function') {
+                    showAlert('error', 'Gagal memuat data: ' + err.message);
+                } else {
+                    alert('Gagal memuat data: ' + err.message);
+                }
+            });
+    }
+
+    function viewRecord(id) {
+        fetch(makeUrl(`instruksi-kerja-lembur/${id}`), {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const rec = data.record;
+                    let html = `
+                        <div class="card mb-3">
+                            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                                <div><strong>Informasi Umum</strong></div>
+                                ${rec.is_free_role ? '<span class="badge bg-warning text-dark">Free Role</span>' : ''}
+                            </div>
+                            <div class="card-body">
+                                <div class="row gy-3">
+                                    <div class="col-md-4">
+                                        <div class="text-muted text-uppercase small fw-semibold">Kode Lembur</div>
+                                        <div class="fs-5 fw-semibold">${rec.vcCounter || '-'}</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="text-muted text-uppercase small fw-semibold">Tanggal</div>
+                                        <div class="fs-5">${rec.dtTanggalLembur || '-'}</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="text-muted text-uppercase small fw-semibold">Jenis Lembur</div>
+                                        <div class="fs-5">${rec.vcJenisLembur || '-'}</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="text-muted text-uppercase small fw-semibold">Divisi</div>
+                                        <div class="fw-semibold">${rec.vcKodeDivisi ? `${rec.vcKodeDivisi}${rec.namaDivisi ? ' - ' + rec.namaDivisi : ''}` : '-'}</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="text-muted text-uppercase small fw-semibold">Departemen</div>
+                                        <div class="fw-semibold">${rec.vcKodeDept ? `${rec.vcKodeDept}${rec.namaDept ? ' - ' + rec.namaDept : ''}` : '-'}</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="text-muted text-uppercase small fw-semibold">Bagian</div>
+                                        <div class="fw-semibold">${rec.vcKodeBagian ? `${rec.vcKodeBagian}${rec.namaBagian ? ' - ' + rec.namaBagian : ''}` : '-'}</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="text-muted text-uppercase small fw-semibold">Diajukan Oleh</div>
+                                        <div class="fw-semibold mb-1">${rec.vcDiajukanOleh ? `${rec.vcDiajukanOleh}${rec.namaPengaju ? ' - ' + rec.namaPengaju : ''}` : '-'}</div>
+                                        ${rec.vcJabatanPengajuNama ? `<small class="text-muted">Jabatan: ${rec.vcJabatanPengajuNama}</small>` : ''}
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="text-muted text-uppercase small fw-semibold">Kepala Departemen</div>
+                                        <div class="fw-semibold">${rec.vcKepalaDept || '-'}</div>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="text-muted text-uppercase small fw-semibold">Alasan / Dasar Lembur</div>
+                                        <div class="border rounded p-3 bg-light">${rec.vcAlasanDasarLembur || '-'}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header bg-success text-white"><strong>Detail Karyawan</strong></div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-hover align-middle">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th style="min-width:110px;">NIK</th>
+                                                <th style="min-width:160px;">Nama</th>
+                                                <th>Jam Mulai</th>
+                                                <th>Jam Selesai</th>
+                                                <th>Durasi (Jam)</th>
+                                                <th>Istirahat (Menit)</th>
+                                                <th style="min-width:200px;">Deskripsi</th>
+                                                <th style="min-width:180px;">Penanggung Beban</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                    `;
+
+                    if (rec.details && rec.details.length > 0) {
+                        rec.details.forEach(detail => {
+                            html += `
+                                <tr>
+                                    <td>${detail.vcNik || '-'}</td>
+                                    <td>${detail.vcNamaKaryawan || '-'}</td>
+                                    <td>${detail.dtJamMulaiLembur || '-'}</td>
+                                    <td>${detail.dtJamSelesaiLembur || '-'}</td>
+                                    <td>${detail.decDurasiLembur || '-'}</td>
+                                    <td>${detail.intDurasiIstirahat || '0'}</td>
+                                    <td>${detail.vcDeskripsiLembur || '-'}</td>
+                                    <td>${detail.vcPenanggungBebanLembur || '-'} ${detail.vcPenanggungBebanLainnya ? '(' + detail.vcPenanggungBebanLainnya + ')' : ''}</td>
+                                </tr>
+                            `;
+                        });
+                    } else {
+                        html += '<tr><td colspan="8" class="text-center">Tidak ada data</td></tr>';
+                    }
+
+                    html += `
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    const viewModalBody = document.getElementById('viewModalBody');
+                    if (viewModalBody) {
+                        viewModalBody.innerHTML = html;
+                    }
+                    const viewModal = document.getElementById('viewModal');
+                    if (viewModal) {
+                        new bootstrap.Modal(viewModal).show();
+                    }
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                if (typeof showAlert === 'function') {
+                    showAlert('error', 'Gagal memuat data');
+                } else {
+                    alert('Gagal memuat data');
+                }
+            });
+    }
+
+    function deleteRecord(id) {
+        if (!confirm('Hapus data instruksi kerja lembur ini? Semua detail akan ikut terhapus.')) return;
+        fetch(makeUrl(`instruksi-kerja-lembur/${id}`), {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    _method: 'DELETE'
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    if (typeof showAlert === 'function') {
+                        showAlert('success', data.message);
+                    } else {
+                        alert(data.message);
+                    }
+                    location.reload();
+                } else {
+                    if (typeof showAlert === 'function') {
+                        showAlert('error', data.message || 'Gagal menghapus data');
+                    } else {
+                        alert(data.message || 'Gagal menghapus data');
+                    }
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                if (typeof showAlert === 'function') {
+                    showAlert('error', 'Terjadi kesalahan saat menghapus');
+                } else {
+                    alert('Terjadi kesalahan saat menghapus');
+                }
+            });
+    }
 
     // ===== HIERARCHICAL DROPDOWN FUNCTIONALITY =====
     // When divisi changes, load departemens
@@ -290,19 +746,10 @@
             // Jika divisi dikosongkan, disable semua detail rows
             document.querySelectorAll('.detail-row').forEach(row => {
                 const nikSelect = row.querySelector('.nik-select');
-                const wrapper = row.querySelector('.searchable-select-wrapper');
                 if (nikSelect) {
                     nikSelect.innerHTML = '<option value="">Pilih Departemen terlebih dahulu</option>';
                     nikSelect.disabled = true;
                     nikSelect.removeAttribute('required');
-                }
-                if (wrapper) {
-                    const searchInput = wrapper.querySelector('.searchable-select-search');
-                    if (searchInput) {
-                        searchInput.disabled = true;
-                        searchInput.placeholder = 'Pilih Departemen terlebih dahulu';
-                        searchInput.value = '';
-                    }
                 }
             });
         }
@@ -313,6 +760,9 @@
         const divisiKode = divisiSelect.value;
         const deptKode = this.value;
 
+        // Check Free Role - jika enabled, skip filter departemen
+        const isFreeRoleEnabled = freeRoleCheckbox && freeRoleCheckbox.checked;
+
         // Reset bagian
         bagianSelect.innerHTML = '<option value="">Pilih Bagian</option>';
         bagianSelect.disabled = !deptKode;
@@ -322,106 +772,88 @@
         if (deptKode) {
             loadKepalaDept(deptKode);
 
-            // Load karyawan untuk semua detail rows yang sudah ada
-            // Gunakan retry logic untuk memastikan detail rows sudah ter-render
-            let attempts = 0;
-            const maxAttempts = 10;
-            const loadKaryawanForAllRows = () => {
-                attempts++;
-                const detailRows = document.querySelectorAll('.detail-row');
-                console.log('Departemen change - Attempt', attempts, ': Mencari detail rows, ditemukan:', detailRows.length);
+            const detailRowsForDept = document.querySelectorAll('.detail-row');
+            const delayPerRow = isFreeRoleEnabled ? 150 : 0;
 
-                if (detailRows.length === 0 && attempts < maxAttempts) {
-                    setTimeout(loadKaryawanForAllRows, 200);
+            detailRowsForDept.forEach((row, idx) => {
+                const nikSelect = row.querySelector('.nik-select');
+                const wrapper = row.querySelector('.searchable-select-wrapper');
+                if (!nikSelect || !wrapper) {
                     return;
                 }
 
-                if (detailRows.length > 0) {
-                    console.log('Departemen change - Detail rows ditemukan, mulai load karyawan untuk', detailRows.length, 'rows');
-                }
+                const loadRowData = () => {
+                    const rowIndex = row.dataset.index;
+                    // console.log disabled for performance
 
-                detailRows.forEach(row => {
-                    const nikSelect = row.querySelector('.nik-select');
-                    const wrapper = row.querySelector('.searchable-select-wrapper');
-                    if (nikSelect && wrapper && deptKode) {
-                        const rowIndex = row.dataset.index;
-                        console.log('Departemen berubah, load karyawan untuk row', rowIndex);
+                    nikSelect.disabled = true;
+                    nikSelect.removeAttribute('required');
+                    nikSelect.innerHTML = '<option value="">Memuat...</option>';
 
-                        nikSelect.disabled = true;
-                        nikSelect.removeAttribute('required');
-                        nikSelect.innerHTML = '<option value="">Memuat...</option>';
+                    const loadUrl = isFreeRoleEnabled ?
+                        'instruksi-kerja-lembur/get-all-karyawans' :
+                        'instruksi-kerja-lembur/get-karyawans-by-departemen';
 
-                        fetch('/instruksi-kerja-lembur/get-karyawans-by-departemen', {
-                                method: 'POST',
-                                headers: {
-                                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                                    'Content-Type': 'application/json',
-                                    'Accept': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    departemen: deptKode
-                                })
-                            })
-                            .then(response => response.json())
-                            .then(result => {
-                                if (result.success) {
-                                    console.log('Karyawan ter-load untuk row', rowIndex, ', jumlah:', result.karyawans.length);
-                                    nikSelect.innerHTML = '<option value="">Pilih NIK</option>';
-                                    result.karyawans.forEach(k => {
-                                        const option = document.createElement('option');
-                                        option.value = k.Nik;
-                                        option.textContent = k.Nik + ' - ' + k.Nama;
-                                        option.setAttribute('data-search', (k.Nik + ' ' + k.Nama).toLowerCase());
-                                        nikSelect.appendChild(option);
-                                    });
-                                    nikSelect.disabled = false;
-                                    if (nikSelect.options.length > 1) {
-                                        nikSelect.setAttribute('required', 'required');
-                                    } else {
-                                        nikSelect.removeAttribute('required');
-                                    }
-                                    console.log('Select enabled untuk row', rowIndex, ', options count:', nikSelect.options.length, ', required:', nikSelect.hasAttribute('required'));
+                    const payload = isFreeRoleEnabled ? {} : {
+                        departemen: deptKode
+                    };
 
-                                    const searchInput = wrapper.querySelector('.searchable-select-search');
-                                    if (searchInput) {
-                                        console.log('Enable search input untuk row', rowIndex, 'setelah karyawan ter-load');
-                                        searchInput.disabled = false;
-                                        searchInput.placeholder = 'Cari NIK atau Nama karyawan aktif...';
-                                        searchInput.removeAttribute('disabled');
-                                    }
+                    fetch(makeUrl(loadUrl), {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify(payload)
+                        })
+                        .then(response => response.json())
+                        .then(result => {
+                            if (result.success) {
+                                const list = result.karyawans || [];
+                                nikSelect.innerHTML = '<option value="">Pilih NIK</option>';
+                                list.forEach(k => {
+                                    const option = document.createElement('option');
+                                    option.value = k.Nik;
+                                    option.textContent = `${k.Nik} - ${k.Nama}`;
+                                    option.setAttribute('data-search', (k.Nik + ' ' + k.Nama).toLowerCase());
+                                    nikSelect.appendChild(option);
+                                });
 
-                                    setTimeout(() => {
-                                        if (nikSelect.options.length > 1) {
-                                            console.log('Re-inisialisasi searchable select untuk row', rowIndex, 'dengan', nikSelect.options.length, 'options');
-                                            delete wrapper.dataset.initialized;
-                                            initSearchableSelectForDetail(wrapper, nikSelect);
-                                        }
-                                    }, 200);
+                                nikSelect.disabled = false;
+                                if (nikSelect.options.length > 1) {
+                                    nikSelect.setAttribute('required', 'required');
                                 } else {
-                                    nikSelect.innerHTML = '<option value="">Tidak ada data</option>';
-                                    nikSelect.disabled = true;
                                     nikSelect.removeAttribute('required');
                                 }
-                            })
-                            .catch(error => {
-                                console.error('Error loading karyawans untuk row', rowIndex, ':', error);
-                                nikSelect.innerHTML = '<option value="">Error memuat data</option>';
-                            });
-                    } else if (nikSelect && !deptKode) {
-                        nikSelect.innerHTML = '<option value="">Pilih Departemen terlebih dahulu</option>';
-                        nikSelect.disabled = true;
-                        nikSelect.removeAttribute('required');
-                        const searchInput = wrapper ? wrapper.querySelector('.searchable-select-search') : null;
-                        if (searchInput) {
-                            searchInput.disabled = true;
-                            searchInput.placeholder = 'Pilih Departemen terlebih dahulu';
-                            searchInput.value = '';
-                        }
-                    }
-                });
-            };
 
-            setTimeout(loadKaryawanForAllRows, 200);
+                                const searchInput = wrapper.querySelector('.searchable-select-search');
+                                if (searchInput) {
+                                    searchInput.disabled = false;
+                                    searchInput.placeholder = isFreeRoleEnabled ?
+                                        'Cari NIK atau Nama karyawan aktif (Free Role)...' :
+                                        'Cari NIK atau Nama karyawan aktif...';
+                                    searchInput.removeAttribute('disabled');
+                                }
+
+                                setTimeout(() => {
+                                    delete wrapper.dataset.initialized;
+                                    initSearchableSelectForDetail(wrapper, nikSelect);
+                                }, 150);
+                            } else {
+                                nikSelect.innerHTML = '<option value="">Tidak ada data</option>';
+                                nikSelect.disabled = true;
+                                nikSelect.removeAttribute('required');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error loading karyawans untuk row', rowIndex, ':', error);
+                            nikSelect.innerHTML = '<option value="">Error memuat data</option>';
+                        });
+                };
+
+                setTimeout(loadRowData, idx * delayPerRow);
+            });
         } else {
             // Reset kepala departemen jika departemen kosong
             const kepalaDeptInput = document.getElementById('vcKepalaDept');
@@ -458,7 +890,7 @@
         departemenSelect.disabled = true;
         departemenSelect.innerHTML = '<option value="">Memuat...</option>';
 
-        fetch('/instruksi-kerja-lembur/get-departemens', {
+        fetch(makeUrl('instruksi-kerja-lembur/get-departemens'), {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -497,7 +929,7 @@
         bagianSelect.disabled = true;
         bagianSelect.innerHTML = '<option value="">Memuat...</option>';
 
-        fetch('/instruksi-kerja-lembur/get-bagians', {
+        fetch(makeUrl('instruksi-kerja-lembur/get-bagians'), {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -669,10 +1101,14 @@
 
         // Jika sudah diinisialisasi, hapus event listeners lama dengan clone
         if (wrapper.dataset.initialized === 'true') {
-            const newSearchInput = searchInput.cloneNode(true);
-            const newSelect = select.cloneNode(true);
-            searchInput.parentNode.replaceChild(newSearchInput, searchInput);
-            select.parentNode.replaceChild(newSelect, select);
+            if (searchInput && searchInput.parentNode) {
+                const newSearchInput = searchInput.cloneNode(true);
+                searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+            }
+            if (select && select.parentNode) {
+                const newSelect = select.cloneNode(true);
+                select.parentNode.replaceChild(newSelect, select);
+            }
         }
 
         // Update references (setelah clone jika ada)
@@ -680,7 +1116,7 @@
         const actualSelect = wrapper.querySelector('.searchable-select');
 
         if (!actualSearchInput || !actualSelect) {
-            console.warn('initSearchableSelectForDetail: actualSearchInput atau actualSelect tidak ditemukan setelah clone');
+            // console.warn disabled for performance
             return;
         }
 
@@ -697,7 +1133,7 @@
             // Cek apakah select sudah memiliki options (selain placeholder)
             const hasOptions = actualSelect.options.length > 1;
             if (!hasOptions) {
-                console.warn('Focus: Select belum memiliki options, pastikan departemen sudah dipilih. Options count:', actualSelect.options.length);
+                // console.warn disabled for performance
                 // Disable search input jika belum ada options
                 actualSearchInput.disabled = true;
                 actualSearchInput.placeholder = 'Pilih Departemen terlebih dahulu';
@@ -705,7 +1141,7 @@
                 return;
             }
 
-            console.log('Focus event triggered on search input, options count:', actualSelect.options.length);
+            // console.log disabled for performance
             wrapper.classList.add('active');
             // Filter options berdasarkan value yang ada
             filterOptions(actualSelect, actualSearchInput.value);
@@ -720,7 +1156,7 @@
                     }
                 }
                 if (!hasVisibleOptions && options.length > 1) {
-                    console.warn('Tidak ada options yang tersedia untuk ditampilkan');
+                    // console.warn disabled for performance
                 }
             }
         }, {
@@ -732,13 +1168,13 @@
             // Cek apakah select sudah memiliki options (selain placeholder)
             const hasOptions = actualSelect.options.length > 1;
             if (!hasOptions) {
-                console.warn('Input: Select belum memiliki options, pastikan departemen sudah dipilih. Options count:', actualSelect.options.length);
+                // console.warn disabled for performance
                 wrapper.classList.remove('active');
                 return;
             }
 
             const term = this.value.trim();
-            console.log('Input event triggered, term:', term, 'options count:', actualSelect.options.length);
+            // console.log disabled for performance
             // Pastikan dropdown selalu muncul saat mengetik
             wrapper.classList.add('active');
             // Filter options berdasarkan term yang diketik
@@ -746,7 +1182,7 @@
 
             // Debug: cek visible options setelah filter
             const visibleOptions = Array.from(actualSelect.options).filter(opt => opt.style.display !== 'none' && opt.value !== '');
-            console.log('Visible options after filter:', visibleOptions.length);
+            // console.log disabled for performance
 
             // Jika tidak ada hasil, tetap tampilkan dropdown kosong untuk feedback
             if (visibleOptions.length === 0 && term) {
@@ -760,7 +1196,7 @@
             if (e.target.tagName === 'OPTION' && e.target.style.display !== 'none') {
                 const selectedValue = e.target.value;
                 if (!selectedValue || selectedValue.trim() === '') {
-                    console.warn('Click: Option dengan value kosong dipilih');
+                    // console.warn disabled for performance
                     return;
                 }
 
@@ -771,14 +1207,14 @@
 
                 // Verifikasi value ter-set
                 if (actualSelect.value !== selectedValue) {
-                    console.warn('Click: Value tidak ter-set dengan benar, coba set lagi');
+                    // console.warn disabled for performance
                     actualSelect.value = selectedValue;
                 }
 
                 // Set required jika ini adalah nik-select dan sudah enabled
                 if (actualSelect.classList.contains('nik-select') && !actualSelect.disabled && selectedValue) {
                     actualSelect.setAttribute('required', 'required');
-                    console.log('✓ Click: NIK dipilih, set required untuk', actualSelect.name, ', value:', selectedValue);
+                    // console.log disabled for performance
                 }
 
                 // Trigger change event
@@ -794,7 +1230,7 @@
                 e.preventDefault();
                 const selectedValue = e.target.value;
                 if (!selectedValue || selectedValue.trim() === '') {
-                    console.warn('Mousedown: Option dengan value kosong dipilih');
+                    // console.warn disabled for performance
                     return;
                 }
 
@@ -805,14 +1241,14 @@
 
                 // Verifikasi value ter-set
                 if (actualSelect.value !== selectedValue) {
-                    console.warn('Mousedown: Value tidak ter-set dengan benar, coba set lagi');
+                    // console.warn disabled for performance
                     actualSelect.value = selectedValue;
                 }
 
                 // Set required jika ini adalah nik-select dan sudah enabled
                 if (actualSelect.classList.contains('nik-select') && !actualSelect.disabled && selectedValue) {
                     actualSelect.setAttribute('required', 'required');
-                    console.log('✓ Mousedown: NIK dipilih, set required untuk', actualSelect.name, ', value:', selectedValue);
+                    // console.log disabled for performance
                 }
 
                 // Trigger change event
@@ -879,7 +1315,7 @@
                     const selectedValue = selectedOption.value;
 
                     if (!selectedValue || selectedValue.trim() === '') {
-                        console.warn('Enter: Option dengan value kosong dipilih');
+                        // console.warn disabled for performance
                         return;
                     }
 
@@ -890,7 +1326,7 @@
 
                     // Verifikasi value ter-set
                     if (actualSelect.value !== selectedValue) {
-                        console.warn('Enter: Value tidak ter-set dengan benar, coba set lagi');
+                        // console.warn disabled for performance
                         actualSelect.value = selectedValue;
                     }
 
@@ -937,11 +1373,11 @@
                     setTimeout(() => {
                         const verifyValue = actualSelect.value;
                         if (verifyValue !== selectedOption.value) {
-                            console.warn('⚠ Value tidak konsisten setelah change event. Expected:', selectedOption.value, ', Actual:', verifyValue);
+                            // console.warn disabled for performance
                             // Coba set lagi
                             actualSelect.value = selectedOption.value;
                         } else {
-                            console.log('✓ Value verified:', verifyValue);
+                            // console.log disabled for performance
                         }
                     }, 100);
                 }
@@ -956,7 +1392,7 @@
         });
 
         wrapper.dataset.initialized = 'true';
-        console.log('initSearchableSelectForDetail: selesai, options count:', actualSelect.options.length);
+        // console.log disabled for performance
     }
 
     function initSearchableSelect(wrapper) {
@@ -1090,7 +1526,7 @@
                     // Set required jika ini adalah nik-select dan sudah enabled
                     if (actualSelect.classList.contains('nik-select') && !actualSelect.disabled && selectedOption.value) {
                         actualSelect.setAttribute('required', 'required');
-                        console.log('Enter: NIK dipilih, set required untuk', actualSelect.name, ', value:', selectedOption.value);
+                        // console.log disabled for performance
                     }
                     // Trigger change event dengan bubbles untuk memastikan event listener lain ter-trigger
                     actualSelect.dispatchEvent(new Event('change', {
@@ -1111,7 +1547,7 @@
                 // Pastikan required di-set saat NIK dipilih (untuk detail row)
                 if (actualSelect.classList.contains('nik-select') && !actualSelect.disabled) {
                     actualSelect.setAttribute('required', 'required');
-                    console.log('Change event: NIK dipilih, set required untuk', actualSelect.name, ', value:', selectedOption.value);
+                    // console.log disabled for performance
                 }
             } else {
                 actualSearchInput.value = '';
@@ -1151,19 +1587,20 @@
         const row = document.createElement('div');
         row.className = 'row g-2 mb-2 detail-row border-bottom pb-2';
         row.dataset.index = index;
+        row.dataset.initializing = data ? 'true' : 'false';
 
         // Karyawan akan dimuat dinamis berdasarkan bagian yang dipilih
         row.innerHTML = `
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label small">NIK/Nama <span class="text-danger">*</span></label>
                 <div class="searchable-select-wrapper">
                     <input type="text" class="form-control form-control-sm searchable-select-search" placeholder="Pilih Departemen terlebih dahulu" autocomplete="off" disabled>
-                    <select class="form-select form-select-sm nik-select searchable-select" name="details[${index}][vcNik]" size="1" disabled>
+                    <select class="form-select form-select-sm nik-select searchable-select" name="details[${index}][vcNik]" size="1" disabled data-required="true">
                         <option value="">Pilih Departemen terlebih dahulu</option>
                     </select>
                 </div>
                 <div class="form-text nama-preview small" style="display:none;"></div>
-                <div class="form-text text-muted small">Ketik untuk mencari karyawan aktif</div>
+                <div class="form-text text-muted small">Ketik untuk mencari</div>
                 <input type="hidden" name="details[${index}][vcNamaKaryawan]" class="nama-karyawan-hidden">
                 <input type="hidden" class="jabatan-kode" name="details[${index}][vcKodeJabatan]">
             </div>
@@ -1175,38 +1612,43 @@
                 <label class="form-label small">Jam Selesai <span class="text-danger">*</span></label>
                 <input type="time" class="form-control form-control-sm jam-selesai" name="details[${index}][dtJamSelesaiLembur]" step="60" required>
             </div>
-            <div class="col-md-1">
+            <div class="col-md-1 col-durasi-shrink">
                 <label class="form-label small">Durasi (Jam)</label>
                 <input type="number" class="form-control form-control-sm durasi-lembur" name="details[${index}][decDurasiLembur]" step="0.01" min="0" readonly>
             </div>
-                    <div class="col-md-1">
-                        <label class="form-label small">Istirahat</label>
-                        <input type="number" class="form-control form-control-sm durasi-istirahat" name="details[${index}][intDurasiIstirahat]" min="0" value="0" placeholder="Menit">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small">Deskripsi</label>
-                        <input type="text" class="form-control form-control-sm" name="details[${index}][vcDeskripsiLembur]" maxlength="200" placeholder="Contoh: 30 menit">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small">Penanggung Beban</label>
-                        <select class="form-select form-select-sm penanggung-beban" name="details[${index}][vcPenanggungBebanLembur]">
-                            <option value="">Pilih</option>
-                            <option value="TGI">TGI</option>
-                            <option value="SIA-EXP">SIA-EXP</option>
-                            <option value="SIA-PROD">SIA-PROD</option>
-                            <option value="RMA">RMA</option>
-                            <option value="SMU">SMU</option>
-                            <option value="ABN-JKT">ABN-JKT</option>
-                            <option value="Lainnya">Lainnya</option>
-                        </select>
-                        <input type="text" class="form-control form-control-sm penanggung-beban-lainnya mt-1" name="details[${index}][vcPenanggungBebanLainnya]" maxlength="100" placeholder="Sebutkan jika Lainnya..." style="display:none;">
-                    </div>
-                    <div class="col-md-1">
-                        <label class="form-label small">Aksi</label>
-                        <button type="button" class="btn btn-sm btn-danger w-100" onclick="removeDetailRow(${index})">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
+            <div class="col-md-1 col-istirahat-shrink">
+                <label class="form-label small">Istirahat</label>
+                <input type="number" class="form-control form-control-sm durasi-istirahat" name="details[${index}][intDurasiIstirahat]" min="0" value="0" placeholder="Menit">
+            </div>
+            <div class="col-md-1 col-deskripsi-wide">
+                <label class="form-label small">Deskripsi</label>
+                <input type="text" class="form-control form-control-sm" name="details[${index}][vcDeskripsiLembur]" maxlength="200" placeholder="Opsional">
+            </div>
+            <div class="col-md-2 col-penanggung-shrink">
+                <label class="form-label small">Penanggung Beban</label>
+                <select class="form-select form-select-sm penanggung-beban" name="details[${index}][vcPenanggungBebanLembur]">
+                    <option value="">Pilih</option>
+                    <option value="TGI">TGI</option>
+                    <option value="SIA-EXP">SIA-EXP</option>
+                    <option value="SIA-PROD">SIA-PROD</option>
+                    <option value="RMA">RMA</option>
+                    <option value="SMU">SMU</option>
+                    <option value="ABN-JKT">ABN-JKT</option>
+                    <option value="Lainnya">Lainnya</option>
+                </select>
+                <input type="text" class="form-control form-control-sm penanggung-beban-lainnya mt-1" name="details[${index}][vcPenanggungBebanLainnya]" maxlength="100" placeholder="Sebutkan jika Lainnya..." style="display:none;">
+            </div>
+            <div class="col-md-2 col-nominal-shrink">
+                <label class="form-label small">Nominal Lembur</label>
+                <input type="text" class="form-control form-control-sm nominal-lembur" name="details[${index}][decLemburExternal]" readonly style="background-color: #f8f9fa; font-weight: bold; text-align: right;" placeholder="Akan tampil setelah simpan">
+                <small class="text-muted" style="font-size: 10px;">Nominal ditampilkan setelah data disimpan</small>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small">Aksi</label>
+                <button type="button" class="btn btn-sm btn-danger w-100" onclick="removeDetailRow(${index})">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
         `;
 
         document.getElementById('detailContainer').appendChild(row);
@@ -1236,14 +1678,85 @@
         const jamSelesai = row.querySelector('.jam-selesai');
         const durasiLembur = row.querySelector('.durasi-lembur');
         const durasiIstirahat = row.querySelector('.durasi-istirahat');
+        const isRowInitializing = () => row.dataset.initializing === 'true';
         const penanggungBeban = row.querySelector('.penanggung-beban');
         const penanggungBebanLainnya = row.querySelector('.penanggung-beban-lainnya');
+        const nominalLembur = row.querySelector('.nominal-lembur');
 
-        // Ambil departemen select dari header (global)
+        // Ambil departemen dan divisi select dari header (global)
         const departemenSelectHeader = document.getElementById('vcKodeDept');
+        const divisiSelectHeader = document.getElementById('vcKodeDivisi');
 
         // Load karyawan saat departemen dipilih
         function loadKaryawansByDepartemen(callback) {
+            // Check Free Role Enabled
+            const isFreeRoleEnabled = freeRoleCheckbox && freeRoleCheckbox.checked;
+
+            // Jika Free Role enabled, load semua karyawan tanpa filter
+            if (isFreeRoleEnabled) {
+                nikSelect.disabled = true;
+                nikSelect.removeAttribute('required');
+                nikSelect.innerHTML = '<option value="">Memuat...</option>';
+
+                fetch(makeUrl('instruksi-kerja-lembur/get-all-karyawans'), {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({})
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            console.log('Karyawan (Free Role) ter-load untuk row', index, ', jumlah:', result.karyawans.length);
+                            nikSelect.innerHTML = '<option value="">Pilih NIK</option>';
+                            result.karyawans.forEach(k => {
+                                const option = document.createElement('option');
+                                option.value = k.Nik;
+                                option.textContent = k.Nik + ' - ' + k.Nama;
+                                option.setAttribute('data-search', (k.Nik + ' ' + k.Nama).toLowerCase());
+                                nikSelect.appendChild(option);
+                            });
+                            nikSelect.disabled = false;
+                            if (nikSelect.options.length > 1) {
+                                nikSelect.setAttribute('required', 'required');
+                            }
+
+                            // Enable search input
+                            const wrapper = row.querySelector('.searchable-select-wrapper');
+                            if (wrapper) {
+                                const searchInput = wrapper.querySelector('.searchable-select-search');
+                                if (searchInput) {
+                                    searchInput.disabled = false;
+                                    searchInput.placeholder = 'Cari NIK atau Nama karyawan aktif (Free Role)...';
+                                    searchInput.removeAttribute('disabled');
+                                }
+
+                                setTimeout(() => {
+                                    if (nikSelect.options.length > 1) {
+                                        initSearchableSelectForDetail(wrapper, nikSelect);
+                                    }
+                                }, 200);
+                            }
+
+                            if (callback) callback();
+                        } else {
+                            nikSelect.innerHTML = '<option value="">Tidak ada data</option>';
+                            nikSelect.disabled = true;
+                            if (callback) callback();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading all karyawans:', error);
+                        nikSelect.innerHTML = '<option value="">Error memuat data</option>';
+                        if (callback) callback();
+                    });
+                return;
+            }
+
+            // Normal mode: filter berdasarkan departemen
             // Gunakan departemen select dari header
             const departemenKode = departemenSelectHeader ? departemenSelectHeader.value : '';
             if (!departemenKode) {
@@ -1270,7 +1783,7 @@
             nikSelect.removeAttribute('required'); // Hapus required saat loading
             nikSelect.innerHTML = '<option value="">Memuat...</option>';
 
-            fetch('/instruksi-kerja-lembur/get-karyawans-by-departemen', {
+            fetch(makeUrl('instruksi-kerja-lembur/get-karyawans-by-departemen'), {
                     method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1284,7 +1797,7 @@
                 .then(response => response.json())
                 .then(result => {
                     if (result.success) {
-                        console.log('Karyawan ter-load untuk row', index, ', jumlah:', result.karyawans.length);
+                        // console.log disabled for performance
                         nikSelect.innerHTML = '<option value="">Pilih NIK</option>';
                         result.karyawans.forEach(k => {
                             const option = document.createElement('option');
@@ -1307,24 +1820,24 @@
                         if (wrapper) {
                             const searchInput = wrapper.querySelector('.searchable-select-search');
                             if (searchInput) {
-                                console.log('Enable search input untuk row', index, 'setelah karyawan ter-load');
+                                // console.log disabled for performance
                                 searchInput.disabled = false;
                                 searchInput.placeholder = 'Cari NIK atau Nama karyawan aktif...';
                                 // Pastikan search input benar-benar enabled
                                 searchInput.removeAttribute('disabled');
                             } else {
-                                console.warn('Search input tidak ditemukan untuk row', index);
+                                // console.warn disabled for performance
                             }
 
                             // Tunggu sebentar untuk memastikan DOM sudah ter-update dan options sudah ter-render
                             setTimeout(() => {
                                 // Pastikan select sudah memiliki options
                                 if (nikSelect.options.length <= 1) {
-                                    console.warn('Select belum memiliki options, tunggu lagi...', nikSelect.options.length);
+                                    // console.warn disabled for performance
                                     setTimeout(() => {
                                         // Re-inisialisasi dengan options yang sudah ter-load
                                         if (nikSelect.options.length > 1) {
-                                            console.log('Re-inisialisasi setelah retry dengan', nikSelect.options.length, 'options');
+                                            // console.log disabled for performance
                                             initSearchableSelectForDetail(wrapper, nikSelect);
                                         } else {
                                             console.error('Select masih belum memiliki options setelah retry');
@@ -1333,7 +1846,7 @@
                                     return;
                                 }
 
-                                console.log('Re-inisialisasi searchable select dengan', nikSelect.options.length, 'options');
+                                // console.log disabled for performance
                                 // Re-inisialisasi searchable select dengan options yang sudah ter-load
                                 initSearchableSelectForDetail(wrapper, nikSelect);
                             }, 200);
@@ -1361,12 +1874,16 @@
             // Buat handler function yang akan dipanggil saat departemen berubah
             const changeHandler = function() {
                 const departemenValue = departemenSelectHeader ? departemenSelectHeader.value : '';
-                console.log('Departemen berubah untuk row', index, ', nilai:', departemenValue);
-                if (departemenValue) {
-                    console.log('Memanggil loadKaryawansByDepartemen untuk row', index);
+                // console.log disabled for performance
+
+                // Check Free Role - jika enabled, langsung load semua karyawan
+                const isFreeRoleEnabled = freeRoleCheckbox && freeRoleCheckbox.checked;
+
+                if (isFreeRoleEnabled || departemenValue) {
+                    // console.log disabled for performance
                     loadKaryawansByDepartemen();
                 } else {
-                    console.log('Departemen kosong, disable search input untuk row', index);
+                    // console.log disabled for performance
                     // Disable search input jika departemen dikosongkan
                     const wrapper = row.querySelector('.searchable-select-wrapper');
                     if (wrapper) {
@@ -1387,17 +1904,20 @@
             row.dataset.departemenChangeHandler = 'attached';
 
             // Debug: log untuk memastikan event listener ter-attach
-            console.log('Event listener untuk departemen change ter-attach untuk row', index);
+            // console.log disabled for performance
         }
 
-        // Jika departemen sudah dipilih saat row dibuat, load karyawan segera
+        // Jika Free Role enabled atau departemen sudah dipilih saat row dibuat, load karyawan segera
         // Gunakan retry logic untuk memastikan departemen sudah ter-set (termasuk dari auto-fill)
         let checkDepartemenAttempts = 0;
         const maxCheckDepartemenAttempts = 15; // Check sampai 15 kali (3 detik total)
         const checkDepartemenAndLoad = () => {
             checkDepartemenAttempts++;
-            if (departemenSelectHeader && departemenSelectHeader.value) {
-                console.log('Row', index, '- Departemen ditemukan pada attempt', checkDepartemenAttempts, ', departemen:', departemenSelectHeader.value);
+            const isFreeRoleEnabled = freeRoleCheckbox && freeRoleCheckbox.checked;
+            const hasDepartemen = departemenSelectHeader && departemenSelectHeader.value;
+
+            if (isFreeRoleEnabled || hasDepartemen) {
+                // console.log disabled for performance
                 // Jika ada data NIK yang perlu di-set, gunakan callback
                 if (data && data.vcNik) {
                     const nikToSet = data.vcNik; // Simpan NIK yang akan di-set
@@ -1432,16 +1952,16 @@
                     });
                 } else {
                     // Tidak ada NIK yang perlu di-set, langsung load karyawan
-                    console.log('Row', index, '- Tidak ada NIK yang perlu di-set, langsung load karyawan');
+                    // console.log disabled for performance
                     loadKaryawansByDepartemen();
                 }
             } else if (checkDepartemenAttempts < maxCheckDepartemenAttempts) {
                 // Departemen belum dipilih, coba lagi setelah 200ms
-                console.log('Row', index, '- Departemen belum dipilih pada attempt', checkDepartemenAttempts, ', akan retry...');
+                // console.log disabled for performance
                 setTimeout(checkDepartemenAndLoad, 200);
             } else {
                 // Sudah max attempts, pastikan search input tetap disabled
-                console.log('Row', index, '- Departemen belum dipilih setelah', maxCheckDepartemenAttempts, 'attempts, search input tetap disabled');
+                // console.log disabled for performance
                 const wrapper = row.querySelector('.searchable-select-wrapper');
                 if (wrapper) {
                     const searchInput = wrapper.querySelector('.searchable-select-search');
@@ -1471,10 +1991,10 @@
             // Pastikan select enabled dan memiliki required saat NIK dipilih
             if (!this.disabled) {
                 this.setAttribute('required', 'required');
-                console.log('NIK dipilih untuk row', index, ', set required:', nik);
+                // console.log disabled for performance
             }
 
-            fetch(`/karyawan/${nik}`, {
+            fetch(makeUrl(`karyawan/${nik}`), {
                     headers: {
                         'Accept': 'application/json'
                     }
@@ -1528,11 +2048,24 @@
             } else {
                 durasiLembur.value = '';
             }
+
+            // Hitung nominal setelah durasi dihitung
+            calculateNominalLembur();
         }
 
-        jamMulai.addEventListener('change', calculateDurasiDetail);
-        jamSelesai.addEventListener('change', calculateDurasiDetail);
-        durasiIstirahat.addEventListener('change', calculateDurasiDetail);
+        // Function: Hitung nominal lembur via API
+        function calculateNominalLembur() {
+            // Preview dinonaktifkan sementara
+            return;
+        }
+
+        const handleDurasiChange = () => {
+            if (isRowInitializing()) return;
+            calculateDurasiDetail();
+        };
+        jamMulai.addEventListener('change', handleDurasiChange);
+        jamSelesai.addEventListener('change', handleDurasiChange);
+        durasiIstirahat.addEventListener('change', handleDurasiChange);
 
         // Event: Penanggung beban lainnya
         penanggungBeban.addEventListener('change', function() {
@@ -1544,7 +2077,25 @@
                 penanggungBebanLainnya.required = false;
                 penanggungBebanLainnya.value = '';
             }
+            // Hitung nominal saat penanggung beban dipilih (dengan sedikit delay untuk memastikan value sudah ter-set)
+            setTimeout(() => {
+                calculateNominalLembur(isRowInitializing());
+            }, 100);
         });
+
+        // Event: Hitung nominal saat NIK dipilih
+        nikSelect.addEventListener('change', function() {
+            if (isRowInitializing()) return;
+            calculateNominalLembur();
+        });
+
+        // Event: Hitung nominal saat tanggal berubah
+        const tanggalLemburInput = document.getElementById('dtTanggalLembur');
+        if (tanggalLemburInput) {
+            tanggalLemburInput.addEventListener('change', function() {
+                calculateNominalLembur(isRowInitializing());
+            });
+        }
 
         // Jika data ada (edit mode) dan bagian belum ter-load saat row dibuat
         // (NIK akan di-set melalui callback di loadKaryawansByDivisi)
@@ -1610,6 +2161,23 @@
                     }
                 }
             }
+            // Set nominal lembur jika ada
+            if (nominalLembur && data.decLemburExternal) {
+                const nominal = parseFloat(data.decLemburExternal || 0);
+                nominalLembur.value = nominal.toLocaleString('id-ID', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            }
+        }
+
+        // Hitung nominal setelah semua field di-set (jika data ada)
+        if (data) {
+            setTimeout(() => {
+                row.dataset.initializing = 'false';
+            }, 500);
+        } else {
+            row.dataset.initializing = 'false';
         }
     }
 
@@ -1695,6 +2263,11 @@
         const kepalaDeptInput = document.getElementById('vcKepalaDept');
         if (kepalaDeptInput) kepalaDeptInput.value = '';
 
+        if (freeRoleCheckbox) {
+            freeRoleCheckbox.checked = false;
+            freeRoleCheckbox.dispatchEvent(new Event('change'));
+        }
+
         // Set default tanggal = hari ini
         const today = new Date();
         const yyyy = today.getFullYear();
@@ -1716,10 +2289,75 @@
     document.getElementById('lemburForm').addEventListener('submit', function(e) {
         e.preventDefault();
 
+        // Hapus required dari semua select yang hidden (searchable-select) untuk menghindari error "not focusable"
+        // Karena select yang hidden tidak bisa di-focus oleh browser saat validasi HTML5
+        // Lakukan ini SEBELUM validasi apapun
+        // Hapus required dari SEMUA select yang memiliki class searchable-select (termasuk yang di detail rows)
+        document.querySelectorAll('.searchable-select').forEach(select => {
+            select.removeAttribute('required');
+            // Pastikan juga tidak ada required di parent atau attribute lainnya
+            if (select.hasAttribute('data-required')) {
+                select.removeAttribute('data-required');
+            }
+        });
+        
+        // Hapus required dari semua input yang hidden juga
+        document.querySelectorAll('input[type="hidden"][required]').forEach(input => {
+            input.removeAttribute('required');
+        });
+        
+        // Hapus required dari semua select yang memiliki style display:none atau visibility:hidden
+        document.querySelectorAll('select[required]').forEach(select => {
+            const style = window.getComputedStyle(select);
+            if (style.display === 'none' || style.visibility === 'hidden' || select.classList.contains('searchable-select')) {
+                select.removeAttribute('required');
+            }
+        });
+
         // Hapus required dari semua select yang disabled atau belum ter-load untuk menghindari error validasi
         let hasValidRow = false;
         const invalidRows = [];
 
+        // LANGKAH 1: Pastikan semua value ter-set SEBELUM validasi
+        // Update value dari semua select yang hidden berdasarkan search input atau selectedIndex
+        document.querySelectorAll('.detail-row').forEach((row) => {
+            const nikSelect = row.querySelector('.nik-select');
+            if (nikSelect && !nikSelect.disabled) {
+                let nikValue = nikSelect.value;
+                
+                // Jika value kosong, coba ambil dari selectedIndex
+                if (!nikValue || nikValue.trim() === '') {
+                    const selectedOption = nikSelect.options[nikSelect.selectedIndex];
+                    if (selectedOption && selectedOption.value) {
+                        nikValue = selectedOption.value;
+                        nikSelect.value = nikValue;
+                    } else {
+                        // Jika masih kosong, coba ambil dari search input (untuk searchable-select)
+                        const wrapper = row.querySelector('.searchable-select-wrapper');
+                        if (wrapper) {
+                            const searchInput = wrapper.querySelector('.searchable-select-search');
+                            if (searchInput && searchInput.value) {
+                                // Cari option yang sesuai dengan text di search input
+                                const searchText = searchInput.value.trim();
+                                const options = Array.from(nikSelect.options);
+                                const matchedOption = options.find(opt => {
+                                    if (!opt.value) return false;
+                                    const optText = opt.textContent.trim();
+                                    // Cek apakah search text mengandung NIK atau sebaliknya
+                                    return optText.includes(searchText) || searchText.includes(opt.value) || opt.value === searchText.split(' - ')[0];
+                                });
+                                if (matchedOption && matchedOption.value) {
+                                    nikValue = matchedOption.value;
+                                    nikSelect.value = nikValue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // LANGKAH 2: Validasi setelah value ter-set
         document.querySelectorAll('.detail-row').forEach((row, idx) => {
             const nikSelect = row.querySelector('.nik-select');
             const jamMulai = row.querySelector('.jam-mulai');
@@ -1727,15 +2365,14 @@
 
             // Validasi NIK
             if (nikSelect) {
-                // Ambil value dari select (bisa dari value atau selectedIndex)
+                // Ambil value dari select (sudah di-update di langkah 1)
                 let nikValue = nikSelect.value;
 
-                // Jika value kosong, coba ambil dari selectedIndex
+                // Jika masih kosong, coba ambil dari selectedIndex sekali lagi
                 if (!nikValue || nikValue.trim() === '') {
                     const selectedOption = nikSelect.options[nikSelect.selectedIndex];
                     if (selectedOption && selectedOption.value) {
                         nikValue = selectedOption.value;
-                        // Update value select untuk memastikan konsistensi
                         nikSelect.value = nikValue;
                     }
                 }
@@ -1743,20 +2380,12 @@
                 const hasValue = nikValue && nikValue.trim() !== '';
                 const isEnabled = !nikSelect.disabled;
 
-                console.log('Validasi row', idx, ':', {
-                    name: nikSelect.name,
-                    value: nikValue,
-                    hasValue: hasValue,
-                    isEnabled: isEnabled,
-                    disabled: nikSelect.disabled,
-                    selectedIndex: nikSelect.selectedIndex,
-                    optionsCount: nikSelect.options.length
-                });
+                // // console.log disabled for performance // Disabled for performance
 
                 // Select dianggap valid jika: enabled, memiliki value, dan value bukan empty string
                 if (isEnabled && hasValue && nikValue !== '') {
-                    // Pastikan select yang valid memiliki required
-                    nikSelect.setAttribute('required', 'required');
+                    // Jangan set required ke select yang hidden (searchable-select), karena browser tidak bisa focus
+                    // Validasi sudah dilakukan manual di sini
 
                     // Validasi Jam Mulai dan Jam Selesai
                     const jamMulaiValue = jamMulai ? jamMulai.value.trim() : '';
@@ -1771,7 +2400,7 @@
                             value: nikValue,
                             enabled: isEnabled
                         });
-                        console.log('✗ Invalid row:', idx, '- Jam Mulai harus diisi');
+                        // // console.log disabled for performance // Disabled for performance
                         return; // Skip row ini
                     }
 
@@ -1784,7 +2413,7 @@
                             value: nikValue,
                             enabled: isEnabled
                         });
-                        console.log('✗ Invalid row:', idx, '- Jam Selesai harus diisi');
+                        // // console.log disabled for performance // Disabled for performance
                         return; // Skip row ini
                     }
 
@@ -1793,11 +2422,7 @@
                     if (jamSelesai) jamSelesai.removeAttribute('required');
 
                     hasValidRow = true;
-                    console.log('✓ Valid row:', idx, {
-                        nik: nikValue,
-                        jamMulai: jamMulaiValue,
-                        jamSelesai: jamSelesaiValue
-                    });
+                    // // console.log disabled for performance // Disabled for performance
                 } else {
                     // Hapus required jika select tidak valid
                     nikSelect.removeAttribute('required');
@@ -1824,14 +2449,15 @@
             }
         });
 
-        const detailRows = document.querySelectorAll('.detail-row');
-        if (detailRows.length === 0) {
+        // Cek apakah ada detail rows
+        const detailRowsCheck = document.querySelectorAll('.detail-row');
+        if (detailRowsCheck.length === 0) {
             showAlert('error', 'Minimal harus ada 1 karyawan dalam detail');
             return;
         }
 
         if (!hasValidRow) {
-            console.error('Tidak ada row yang valid. Invalid rows:', invalidRows);
+            // console.error('Tidak ada row yang valid. Invalid rows:', invalidRows); // Disabled for performance
             const errorMessages = [];
             invalidRows.forEach(row => {
                 if (row.reason === 'Jam Mulai harus diisi') {
@@ -1851,9 +2477,131 @@
             return;
         }
 
-        const url = isEditMode ? `/instruksi-kerja-lembur/${currentId}` : '/instruksi-kerja-lembur';
+        // Re-index semua detail rows untuk memastikan index konsisten (0, 1, 2, dst.)
+        // Ini penting untuk mode Edit dimana rows bisa di-edit atau ditambah
+        // Lakukan SEBELUM membuat FormData agar perubahan name attribute ter-capture
+        const detailRows = document.querySelectorAll('.detail-row');
+        detailRows.forEach((row, newIndex) => {
+            // Update dataset.index untuk tracking
+            row.dataset.index = newIndex;
+            
+            // Update semua name attributes di dalam row dengan index baru
+            const inputs = row.querySelectorAll('input, select');
+            inputs.forEach(input => {
+                if (input.name && input.name.includes('details[')) {
+                    // Extract field name dari name attribute
+                    // Format: details[oldIndex][fieldName]
+                    const match = input.name.match(/details\[\d+\]\[(.+)\]/);
+                    if (match && match[1]) {
+                        const fieldName = match[1];
+                        input.name = `details[${newIndex}][${fieldName}]`;
+                    }
+                }
+            });
+        });
+
+        const url = isEditMode ? `${basePath}/instruksi-kerja-lembur/${currentId}` : `${basePath}/instruksi-kerja-lembur`;
         document.getElementById('_method').value = isEditMode ? 'PUT' : 'POST';
-        const formData = new FormData(this);
+        
+        // Buat FormData manual SETELAH re-indexing untuk memastikan semua data ter-capture dengan benar
+        const formData = new FormData();
+        
+        // Tambahkan field header dari form
+        const form = document.getElementById('lemburForm');
+        const headerFields = ['vcKodeDivisi', 'vcKodeDept', 'vcKodeBagian', 'dtTanggalLembur', 'vcDiajukanOleh', 'vcAlasanDasarLembur', 'vcJabatanPengaju', 'vcKepalaDept'];
+        headerFields.forEach(fieldName => {
+            const field = form.querySelector(`[name="${fieldName}"]`);
+            if (field && !field.disabled) {
+                formData.append(fieldName, field.value || '');
+            }
+        });
+        
+        // Tambahkan freeRoleEnabled
+        if (freeRoleCheckbox) {
+            formData.append('freeRoleEnabled', freeRoleCheckbox.checked ? 1 : 0);
+        } else {
+            formData.append('freeRoleEnabled', 0);
+        }
+        
+        // Tambahkan _method untuk PUT request
+        formData.append('_method', isEditMode ? 'PUT' : 'POST');
+        
+        // Tambahkan detail rows SETELAH re-indexing (name attributes sudah di-update)
+        // Gunakan querySelector berdasarkan name attribute yang sudah di-update untuk memastikan data ter-capture
+        detailRows.forEach((row, newIndex) => {
+            // Ambil semua input/select di row berdasarkan name attribute yang sudah di-update
+            const nikSelect = row.querySelector(`select[name="details[${newIndex}][vcNik]"]`);
+            const jamMulai = row.querySelector(`input[name="details[${newIndex}][dtJamMulaiLembur]"]`);
+            const jamSelesai = row.querySelector(`input[name="details[${newIndex}][dtJamSelesaiLembur]"]`);
+            const durasiLembur = row.querySelector(`input[name="details[${newIndex}][decDurasiLembur]"]`);
+            const durasiIstirahat = row.querySelector(`input[name="details[${newIndex}][intDurasiIstirahat]"]`);
+            const deskripsi = row.querySelector(`input[name="details[${newIndex}][vcDeskripsiLembur]"]`);
+            const penanggungBeban = row.querySelector(`select[name="details[${newIndex}][vcPenanggungBebanLembur]"]`);
+            const penanggungBebanLainnya = row.querySelector(`input[name="details[${newIndex}][vcPenanggungBebanLainnya]"]`);
+            const nominalLembur = row.querySelector(`input[name="details[${newIndex}][decLemburExternal]"]`);
+            const namaKaryawan = row.querySelector(`input[name="details[${newIndex}][vcNamaKaryawan]"]`);
+            const jabatanKode = row.querySelector(`input[name="details[${newIndex}][vcKodeJabatan]"]`);
+            
+            // Ambil NIK value dengan berbagai cara untuk memastikan ter-capture
+            let nikValue = '';
+            if (nikSelect && !nikSelect.disabled) {
+                nikValue = nikSelect.value;
+                
+                // Jika value kosong, coba ambil dari selectedIndex
+                if (!nikValue || nikValue.trim() === '') {
+                    const selectedOption = nikSelect.options[nikSelect.selectedIndex];
+                    if (selectedOption && selectedOption.value) {
+                        nikValue = selectedOption.value;
+                        nikSelect.value = nikValue;
+                    } else {
+                        // Jika masih kosong, coba ambil dari search input (untuk searchable-select)
+                        const wrapper = row.querySelector('.searchable-select-wrapper');
+                        if (wrapper) {
+                            const searchInput = wrapper.querySelector('.searchable-select-search');
+                            if (searchInput && searchInput.value) {
+                                // Cari option yang sesuai dengan text di search input
+                                const searchText = searchInput.value.trim();
+                                const options = Array.from(nikSelect.options);
+                                const matchedOption = options.find(opt => {
+                                    if (!opt.value) return false;
+                                    const optText = opt.textContent.trim();
+                                    // Cek apakah search text mengandung NIK atau sebaliknya
+                                    return optText.includes(searchText) || searchText.includes(opt.value) || opt.value === searchText.split(' - ')[0];
+                                });
+                                if (matchedOption && matchedOption.value) {
+                                    nikValue = matchedOption.value;
+                                    nikSelect.value = nikValue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Skip row jika NIK tidak ada atau disabled atau kosong
+            if (!nikSelect || nikSelect.disabled || !nikValue || nikValue.trim() === '') {
+                return;
+            }
+            
+            // Tambahkan semua field detail dengan index yang sudah di-update
+            // Pastikan semua field required ada
+            if (nikValue) formData.append(`details[${newIndex}][vcNik]`, nikValue);
+            if (namaKaryawan && namaKaryawan.value) formData.append(`details[${newIndex}][vcNamaKaryawan]`, namaKaryawan.value);
+            if (jabatanKode && jabatanKode.value) formData.append(`details[${newIndex}][vcKodeJabatan]`, jabatanKode.value);
+            if (jamMulai && jamMulai.value) formData.append(`details[${newIndex}][dtJamMulaiLembur]`, jamMulai.value);
+            if (jamSelesai && jamSelesai.value) formData.append(`details[${newIndex}][dtJamSelesaiLembur]`, jamSelesai.value);
+            if (durasiLembur && durasiLembur.value) formData.append(`details[${newIndex}][decDurasiLembur]`, durasiLembur.value);
+            if (durasiIstirahat) formData.append(`details[${newIndex}][intDurasiIstirahat]`, durasiIstirahat.value || '0');
+            if (deskripsi && deskripsi.value) formData.append(`details[${newIndex}][vcDeskripsiLembur]`, deskripsi.value);
+            if (penanggungBeban && penanggungBeban.value) formData.append(`details[${newIndex}][vcPenanggungBebanLembur]`, penanggungBeban.value);
+            if (penanggungBebanLainnya && penanggungBebanLainnya.value) formData.append(`details[${newIndex}][vcPenanggungBebanLainnya]`, penanggungBebanLainnya.value);
+            
+            // Convert nominal dari format dengan separator ke format angka
+            if (nominalLembur && nominalLembur.value) {
+                const numericValue = nominalLembur.value.replace(/\./g, '').replace(',', '.');
+                formData.append(`details[${newIndex}][decLemburExternal]`, numericValue);
+            }
+        });
 
         fetch(url, {
                 method: 'POST',
@@ -1863,284 +2611,48 @@
                 },
                 body: formData
             })
-            .then(r => {
-                if (!r.ok) {
-                    return r.json().then(err => {
-                        throw new Error(err.message || 'HTTP Error: ' + r.status);
-                    });
+            .then(async r => {
+                const responseText = await r.text();
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (e) {
+                    throw new Error('Invalid JSON response: ' + responseText.substring(0, 100));
                 }
-                return r.json();
+                
+                if (!r.ok) {
+                    throw new Error(data.message || data.error || 'HTTP Error: ' + r.status);
+                }
+                
+                return data;
             })
             .then(data => {
                 if (data.success) {
                     bootstrap.Modal.getInstance(document.getElementById('lemburModal')).hide();
-                    showAlert('success', data.message);
+                    showAlert('success', data.message || 'Data berhasil disimpan');
                     setTimeout(() => location.reload(), 1000);
                 } else {
                     bootstrap.Modal.getInstance(document.getElementById('lemburModal')).hide();
-                    showAlert('error', data.message || 'Gagal menyimpan data');
+                    const errorMsg = data.message || data.error || 'Gagal menyimpan data';
+                    if (data.errors) {
+                        const errorList = Object.values(data.errors).flat().join(', ');
+                        showAlert('error', errorMsg + ': ' + errorList);
+                    } else {
+                        showAlert('error', errorMsg);
+                    }
                 }
             })
             .catch(err => {
-                console.error(err);
+                console.error('Error saving:', err);
                 bootstrap.Modal.getInstance(document.getElementById('lemburModal')).hide();
-                showAlert('error', err.message || 'Terjadi kesalahan saat menyimpan');
+                const errorMessage = err.message || 'Terjadi kesalahan saat menyimpan';
+                showAlert('error', errorMessage);
+                // Log error details untuk debugging
+                if (err.response) {
+                    console.error('Response error:', err.response);
+                }
             });
     });
-
-    function editRecord(id) {
-        fetch(`/instruksi-kerja-lembur/${id}`, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
-                }
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    isEditMode = true;
-                    currentId = id;
-                    detailIndex = 0;
-                    document.getElementById('lemburModalLabel').textContent = 'Edit Instruksi Kerja Lembur';
-                    document.getElementById('_method').value = 'PUT';
-
-                    const rec = data.record;
-
-                    // Set divisi first, then trigger change to load departemens
-                    if (rec.vcKodeDivisi) {
-                        divisiSelect.value = rec.vcKodeDivisi;
-
-                        // Load departemens dengan callback untuk set value setelah ter-load
-                        loadDepartemens(rec.vcKodeDivisi, function() {
-                            // Set departemen setelah departemen ter-load
-                            if (rec.vcKodeDept) {
-                                departemenSelect.value = rec.vcKodeDept;
-
-                                // Load kepala departemen setelah departemen ter-set
-                                if (rec.vcKodeDept) {
-                                    loadKepalaDept(rec.vcKodeDept);
-                                }
-
-                                // Load bagians dengan callback untuk set value setelah ter-load
-                                loadBagians(rec.vcKodeDivisi, rec.vcKodeDept, function() {
-                                    // Set bagian setelah bagian ter-load
-                                    if (rec.vcKodeBagian) {
-                                        bagianSelect.value = rec.vcKodeBagian;
-                                        // Trigger change untuk load karyawan
-                                        bagianSelect.dispatchEvent(new Event('change'));
-                                    }
-                                });
-                            }
-                        });
-                    }
-
-                    document.getElementById('dtTanggalLembur').value = rec.dtTanggalLembur;
-                    document.getElementById('vcJenisLembur').value = rec.vcJenisLembur || '';
-                    document.getElementById('vcAlasanDasarLembur').value = rec.vcAlasanDasarLembur || '';
-
-                    // Set Jabatan Pengaju
-                    const jabatanPengajuDisplay = document.getElementById('vcJabatanPengaju_display');
-                    const jabatanPengajuInput = document.getElementById('vcJabatanPengaju');
-                    if (jabatanPengajuInput && rec.vcJabatanPengaju) {
-                        jabatanPengajuInput.value = rec.vcJabatanPengaju;
-                        // Set nama jabatan dari data yang sudah ada
-                        if (jabatanPengajuDisplay) {
-                            jabatanPengajuDisplay.value = rec.vcJabatanPengajuNama || rec.vcJabatanPengaju;
-                        }
-                    }
-
-                    // Set Kepala Departemen
-                    const kepalaDeptInput = document.getElementById('vcKepalaDept');
-                    if (kepalaDeptInput && rec.vcKepalaDept) {
-                        kepalaDeptInput.value = rec.vcKepalaDept;
-                    }
-
-                    // Set "Diajukan Oleh" dengan update search input juga
-                    const diajukanOlehSelect = document.getElementById('vcDiajukanOleh');
-                    const diajukanOlehSearch = document.getElementById('vcDiajukanOleh_search');
-                    if (diajukanOlehSelect && rec.vcDiajukanOleh) {
-                        diajukanOlehSelect.value = rec.vcDiajukanOleh;
-                        // Update search input dengan text dari option yang dipilih
-                        const selectedOption = diajukanOlehSelect.options[diajukanOlehSelect.selectedIndex];
-                        if (selectedOption && selectedOption.value) {
-                            if (diajukanOlehSearch) {
-                                diajukanOlehSearch.value = selectedOption.textContent;
-                            }
-                        }
-                        // Trigger change event untuk memastikan search input ter-update dan auto-fill jabatan
-                        diajukanOlehSelect.dispatchEvent(new Event('change'));
-                    }
-
-                    // Clear detail container
-                    document.getElementById('detailContainer').innerHTML = '';
-
-                    // Simpan detail data untuk di-load setelah bagian ter-load
-                    const detailDataToLoad = rec.details && rec.details.length > 0 ? rec.details : [];
-
-                    // Function untuk load detail setelah bagian dan karyawan ter-load
-                    function loadDetailsAfterKaryawanLoaded() {
-                        if (detailDataToLoad.length > 0) {
-                            detailDataToLoad.forEach((detail, idx) => {
-                                // Tambahkan delay kecil untuk setiap row agar tidak conflict
-                                setTimeout(() => {
-                                    addDetailRow({
-                                        vcNik: detail.vcNik,
-                                        vcNamaKaryawan: detail.vcNamaKaryawan,
-                                        vcKodeJabatan: detail.vcKodeJabatan,
-                                        dtJamMulaiLembur: detail.dtJamMulaiLembur,
-                                        dtJamSelesaiLembur: detail.dtJamSelesaiLembur,
-                                        decDurasiLembur: detail.decDurasiLembur,
-                                        intDurasiIstirahat: detail.intDurasiIstirahat,
-                                        vcDeskripsiLembur: detail.vcDeskripsiLembur,
-                                        vcPenanggungBebanLembur: detail.vcPenanggungBebanLembur,
-                                        vcPenanggungBebanLainnya: detail.vcPenanggungBebanLainnya
-                                    });
-                                }, idx * 100); // Delay 100ms per row
-                            });
-                        } else {
-                            addDetailRow();
-                        }
-                    }
-
-                    // Jika bagian sudah di-set, tunggu bagian ter-load dan trigger load karyawan, baru load detail
-                    // Tunggu divisi ter-load sebelum load detail rows
-                    // Pastikan divisi sudah ter-set dan karyawan sudah ter-load untuk semua row
-                    if (rec.vcKodeDivisi) {
-                        // Tunggu divisi ter-set dan karyawan ter-load
-                        // Karena divisi sudah di-set, kita perlu delay untuk memastikan karyawan ter-load
-                        setTimeout(() => {
-                            loadDetailsAfterKaryawanLoaded();
-                        }, 1500);
-                    } else {
-                        // Jika tidak ada divisi, langsung load detail (tapi akan disabled)
-                        loadDetailsAfterKaryawanLoaded();
-                    }
-
-                    new bootstrap.Modal(document.getElementById('lemburModal')).show();
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                showAlert('error', 'Gagal memuat data');
-            });
-    }
-
-    function viewRecord(id) {
-        fetch(`/instruksi-kerja-lembur/${id}`, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
-                }
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    const rec = data.record;
-                    let html = `
-                        <div class="card mb-3">
-                            <div class="card-header bg-primary text-white"><strong>Header</strong></div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-6"><strong>Counter:</strong> ${rec.vcCounter}</div>
-                                    <div class="col-md-6"><strong>Tanggal:</strong> ${rec.dtTanggalLembur}</div>
-                                    <div class="col-md-6"><strong>Divisi:</strong> ${rec.vcKodeDivisi || '-'}</div>
-                                    <div class="col-md-6"><strong>Departemen:</strong> ${rec.vcKodeDept || '-'}</div>
-                                    <div class="col-md-6"><strong>Bagian:</strong> ${rec.vcKodeBagian || '-'}</div>
-                                    <div class="col-md-6"><strong>Diajukan Oleh:</strong> ${rec.vcDiajukanOleh || '-'}</div>
-                                    <div class="col-12"><strong>Alasan:</strong> ${rec.vcAlasanDasarLembur || '-'}</div>
-                                    <div class="col-md-6"><strong>Rencana Durasi:</strong> ${rec.decRencanaDurasiJam || '-'} jam</div>
-                                    <div class="col-md-6"><strong>Pukul:</strong> ${rec.dtRencanaDariPukul || '-'} s/d ${rec.dtRencanaSampaiPukul || '-'}</div>
-                                    <div class="col-12"><strong>Penanggung Biaya:</strong> ${rec.vcPenanggungBiaya || '-'} ${rec.vcPenanggungBiayaLainnya ? '(' + rec.vcPenanggungBiayaLainnya + ')' : ''}</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="card">
-                            <div class="card-header bg-success text-white"><strong>Detail Karyawan</strong></div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-sm">
-                                        <thead>
-                                            <tr>
-                                                <th>NIK</th>
-                                                <th>Nama</th>
-                                                <th>Jam Mulai</th>
-                                                <th>Jam Selesai</th>
-                                                <th>Durasi (Jam)</th>
-                                                <th>Istirahat (Menit)</th>
-                                                <th>Deskripsi</th>
-                                                <th>Penanggung Beban</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                    `;
-
-                    if (rec.details && rec.details.length > 0) {
-                        rec.details.forEach(detail => {
-                            html += `
-                                <tr>
-                                    <td>${detail.vcNik}</td>
-                                    <td>${detail.vcNamaKaryawan}</td>
-                                    <td>${detail.dtJamMulaiLembur || '-'}</td>
-                                    <td>${detail.dtJamSelesaiLembur || '-'}</td>
-                                    <td>${detail.decDurasiLembur || '-'}</td>
-                                    <td>${detail.intDurasiIstirahat || '0'}</td>
-                                    <td>${detail.vcDeskripsiLembur || '-'}</td>
-                                    <td>${detail.vcPenanggungBebanLembur || '-'} ${detail.vcPenanggungBebanLainnya ? '(' + detail.vcPenanggungBebanLainnya + ')' : ''}</td>
-                                </tr>
-                            `;
-                        });
-                    } else {
-                        html += '<tr><td colspan="8" class="text-center">Tidak ada data</td></tr>';
-                    }
-
-                    html += `
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    document.getElementById('viewModalBody').innerHTML = html;
-                    new bootstrap.Modal(document.getElementById('viewModal')).show();
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                showAlert('error', 'Gagal memuat data');
-            });
-    }
-
-    function deleteRecord(id) {
-        if (!confirm('Hapus data instruksi kerja lembur ini? Semua detail akan ikut terhapus.')) return;
-        fetch(`/instruksi-kerja-lembur/${id}`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    _method: 'DELETE'
-                })
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    showAlert('success', data.message);
-                    location.reload();
-                } else {
-                    showAlert('error', data.message || 'Gagal menghapus data');
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                showAlert('error', 'Terjadi kesalahan saat menghapus');
-            });
-    }
-
-    // Make removeDetailRow globally accessible
-    window.removeDetailRow = removeDetailRow;
 
     // Initialize searchable select on page load
     document.addEventListener('DOMContentLoaded', function() {
@@ -2252,5 +2764,174 @@
     // Auto submit filter
     document.getElementById('dari_tanggal')?.addEventListener('change', () => document.getElementById('filterForm').submit());
     document.getElementById('sampai_tanggal')?.addEventListener('change', () => document.getElementById('filterForm').submit());
+
+    // Pastikan semua fungsi global tersedia untuk onclick handlers
+    // Fungsi yang didefinisikan dengan 'function' sudah otomatis di global scope,
+    // tapi kita pastikan dengan menambahkan ke window untuk kompatibilitas
+    if (typeof editRecord === 'function') {
+        window.editRecord = editRecord;
+    }
+    if (typeof viewRecord === 'function') {
+        window.viewRecord = viewRecord;
+    }
+    if (typeof deleteRecord === 'function') {
+        window.deleteRecord = deleteRecord;
+    }
+
+    // Debug: Log untuk memastikan fungsi tersedia
+    console.log('IKL Functions loaded:', {
+        editRecord: typeof editRecord,
+        viewRecord: typeof viewRecord,
+        deleteRecord: typeof deleteRecord
+    });
+
+    // Autocomplete functionality
+    let searchTimeout;
+    let selectedIndex = -1;
+    const searchInput = document.getElementById('search');
+    const autocompleteDiv = document.getElementById('searchAutocomplete');
+    const karyawanList = @json($karyawanList ?? []);
+
+    function getCurrentSearchTerms() {
+        const value = searchInput ? searchInput.value.trim() : '';
+        if (!value) return [];
+        return value.split(',').map(term => term.trim()).filter(term => term.length > 0);
+    }
+
+    function getCurrentTypingTerm() {
+        const value = searchInput ? searchInput.value.trim() : '';
+        if (!value) return '';
+        const terms = value.split(',');
+        return terms[terms.length - 1].trim();
+    }
+
+    if (searchInput && autocompleteDiv) {
+        searchInput.addEventListener('input', function() {
+            const currentTerm = getCurrentTypingTerm().toLowerCase();
+            clearTimeout(searchTimeout);
+            if (currentTerm.length === 0) {
+                autocompleteDiv.style.display = 'none';
+                selectedIndex = -1;
+                return;
+            }
+            if (currentTerm.length < 2) {
+                autocompleteDiv.style.display = 'none';
+                return;
+            }
+            searchTimeout = setTimeout(() => {
+                const results = karyawanList.filter(k => k.search.includes(currentTerm)).slice(0, 20);
+                displayAutocomplete(results);
+            }, 200);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            const items = autocompleteDiv.querySelectorAll('.autocomplete-item');
+            if (items.length === 0) return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                updateSelectedItem(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                updateSelectedItem(items);
+            } else if (e.key === 'Enter' && selectedIndex >= 0) {
+                e.preventDefault();
+                items[selectedIndex].click();
+            }
+        });
+    }
+
+    function displayAutocomplete(karyawans) {
+        if (!autocompleteDiv) return;
+        if (!karyawans || karyawans.length === 0) {
+            autocompleteDiv.innerHTML = '<div class="autocomplete-item">Tidak ada karyawan ditemukan</div>';
+            autocompleteDiv.style.display = 'block';
+            return;
+        }
+        autocompleteDiv.innerHTML = '';
+        karyawans.forEach((karyawan, index) => {
+            if (!karyawan || !karyawan.nik) return;
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.innerHTML = `
+                <strong>${karyawan.nik || ''}</strong> - ${karyawan.nama || ''}
+                <small>Divisi: ${karyawan.divisi || '-'} | Bagian: ${karyawan.bagian || '-'}</small>
+            `;
+            item.addEventListener('click', function() {
+                selectKaryawan(karyawan);
+            });
+            autocompleteDiv.appendChild(item);
+        });
+        autocompleteDiv.style.display = 'block';
+        selectedIndex = -1;
+    }
+
+    function selectKaryawan(karyawan) {
+        if (!searchInput) return;
+        const currentTerms = getCurrentSearchTerms();
+        currentTerms.pop();
+        const newTerm = `${karyawan.nik} - ${karyawan.nama}`;
+        currentTerms.push(newTerm);
+        searchInput.value = currentTerms.join(', ');
+        if (autocompleteDiv) {
+            autocompleteDiv.style.display = 'none';
+        }
+        selectedIndex = -1;
+        searchInput.focus();
+    }
+
+    document.addEventListener('click', function(e) {
+        if (searchInput && autocompleteDiv && !searchInput.contains(e.target) && !autocompleteDiv.contains(e.target)) {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        }
+    });
+
+    function updateSelectedItem(items) {
+        items.forEach((item, index) => {
+            item.classList.toggle('active', index === selectedIndex);
+        });
+    }
 </script>
+@endpush
+
+@push('styles')
+<style>
+    .autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ced4da;
+        border-radius: 0.375rem;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        margin-top: 2px;
+    }
+    .autocomplete-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.2s;
+    }
+    .autocomplete-item:hover,
+    .autocomplete-item.active {
+        background-color: #f8f9fa;
+    }
+    .autocomplete-item:last-child {
+        border-bottom: none;
+    }
+    .autocomplete-item strong {
+        color: #0d6efd;
+    }
+    .autocomplete-item small {
+        color: #6c757d;
+        display: block;
+        margin-top: 0.25rem;
+    }
+</style>
 @endpush

@@ -200,6 +200,11 @@
                 // Check apakah user punya permission untuk Dashboard Employee
                 $hasDashboardEmployeeMenu = $sidebarUser->hasPermission('view-dashboard-employee');
                 @endphp
+                <li class="menu-item">
+                    <a href="{{ route('dashboard') }}" class="menu-button">
+                        <span><i class="menu-icon fas fa-calendar-day"></i>Dashboard harian</span>
+                    </a>
+                </li>
                 @if($hasDashboardGroupMenu)
                 <li class="menu-item">
                     <a href="{{ route('dashboard.group') }}" class="menu-button">
@@ -295,6 +300,7 @@
                 'view-browse-absensi',
                 'view-browse-tidak-absen',
                 'view-jadwal-shift-satpam',
+                'view-master-shift-security',
                 'view-override-jadwal',
                 'view-tidak-masuk',
                 'view-izin-keluar',
@@ -324,6 +330,12 @@
                             @endif
                             @if($sidebarUser->hasPermission('view-absensi') || $sidebarUser->hasPermission('view-jadwal-shift-satpam'))
                             <li><a href="{{ route('jadwal-shift-security.index') }}">Jadwal Shift Satpam</a></li>
+                            @endif
+                            @if($sidebarUser->hasPermission('view-absensi') || $sidebarUser->hasPermission('view-jadwal-shift-satpam'))
+                            <li><a href="{{ route('browse-absensi-security.index') }}">Browse Absensi Security</a></li>
+                            @endif
+                            @if($sidebarUser->hasPermission('view-absensi') || $sidebarUser->hasPermission('view-master-shift-security'))
+                            <li><a href="{{ route('master-shift-security.index') }}">Master Shift Security</a></li>
                             @endif
                             @if($sidebarUser->hasPermission('view-absensi') || $sidebarUser->hasPermission('view-override-jadwal'))
                             <li><a href="{{ route('override-jadwal-security.index') }}">List Override Jadwal</a></li>
@@ -462,10 +474,14 @@
                 // Check apakah user punya permission untuk menu Settings (group atau granular)
                 $hasSettingsMenu = $sidebarUser->hasMenuPermission('view-settings', [
                 'view-tarik-data-absensi',
+                'view-tarik-data-absensi-api',
                 'view-tarik-data-izin',
                 'view-tarik-data-tidak-masuk',
+                'view-list-pengajuan-cuti-api',
+                'view-list-pengajuan-izin-api',
                 'view-tarik-data-hutang-piutang',
                 'view-logs',
+                'view-login-activity',
                 'manage-users',
                 'manage-roles',
                 'manage-permissions'
@@ -482,17 +498,29 @@
                             @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-tarik-data-absensi'))
                             <li><a href="{{ route('tarik-data-absensi.index') }}">Tarik Data Absensi</a></li>
                             @endif
+                            @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-tarik-data-absensi-api'))
+                            <li><a href="{{ route('tarik-data-absensi-api.index') }}">Tarik Data Absensi API</a></li>
+                            @endif
                             @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-tarik-data-izin'))
                             <li><a href="{{ route('tarik-data-izin.index') }}">Tarik Data Izin</a></li>
                             @endif
                             @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-tarik-data-tidak-masuk'))
                             <li><a href="{{ route('tarik-data-tidak-masuk.index') }}">Tarik Data Tidak Masuk</a></li>
                             @endif
+                            @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-list-pengajuan-cuti-api'))
+                            <li><a href="{{ route('list-pengajuan-cuti-api.index') }}">List Pengajuan Cuti API</a></li>
+                            @endif
+                            @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-list-pengajuan-izin-api'))
+                            <li><a href="{{ route('list-pengajuan-izin-api.index') }}">List Pengajuan Izin API</a></li>
+                            @endif
                             @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-tarik-data-hutang-piutang'))
                             <li><a href="{{ route('tarik-data-hutang-piutang.index') }}">Tarik Data Hutang Piutang</a></li>
                             @endif
                             @if($sidebarUser->hasPermission('view-logs'))
                             <li><a href="{{ route('logs.index') }}">Activity Logs</a></li>
+                            @endif
+                            @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-login-activity'))
+                            <li><a href="{{ route('login-activity.index') }}">Login Aktif &amp; Riwayat</a></li>
                             @endif
                             @if($sidebarUser->hasPermission('manage-users'))
                             <li><a href="{{ route('users.index') }}">Pengelolaan User</a></li>

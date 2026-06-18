@@ -25,7 +25,44 @@ class InstruksiKerjaLemburController extends Controller
     {
         $startDate = $request->get('dari_tanggal');
         $endDate = $request->get('sampai_tanggal');
+        
+        // Get filter parameters
+        $search = $request->get('search'); // NIK / Nama (gabungan)
+        // Backward compatibility: jika masih ada parameter nik, gunakan itu
         $nik = $request->get('nik');
+        if (!$search && $nik) {
+            $search = $nik;
+        }
+
+        // Load karyawan aktif untuk autocomplete lokal
+        $karyawansForAutocomplete = Karyawan::where('vcAktif', '1')
+            ->whereNull('Tgl_Berhenti')
+            ->with(['divisi', 'bagian'])
+            ->orderBy('Nama')
+            ->get(['Nik', 'Nama', 'Divisi', 'vcKodeBagian']);
+
+        // Siapkan data sederhana untuk frontend (hindari logic berat di Blade)
+        $karyawanList = $karyawansForAutocomplete->map(function ($k) {
+            $divisiNama = '-';
+            if ($k->divisi && isset($k->divisi->vcNamaDivisi)) {
+                $divisiNama = $k->divisi->vcNamaDivisi;
+            } elseif ($k->Divisi) {
+                $divisiNama = $k->Divisi;
+            }
+
+            $bagianNama = '-';
+            if ($k->bagian && isset($k->bagian->vcNamaBagian)) {
+                $bagianNama = $k->bagian->vcNamaBagian;
+            }
+
+            return [
+                'nik' => $k->Nik ?: '',
+                'nama' => $k->Nama ?: '',
+                'divisi' => $divisiNama,
+                'bagian' => $bagianNama,
+                'search' => strtolower(($k->Nik ?: '') . ' ' . ($k->Nama ?: '')),
+            ];
+        })->values();
 
         // Query untuk data header
         $query = LemburHeader::with(['departemen', 'bagian', 'details'])
@@ -36,10 +73,25 @@ class InstruksiKerjaLemburController extends Controller
             $query->whereBetween('dtTanggalLembur', [$startDate, $endDate]);
         }
 
-        // Filter NIK jika ada
-        if ($nik) {
-            $query->whereHas('details', function ($q) use ($nik) {
-                $q->where('vcNik', 'like', '%' . $nik . '%');
+        // Apply search filter (multi-term support)
+        if ($search) {
+            $searchTerms = preg_split('/,\s*/', trim($search));
+            $query->whereHas('details', function ($q) use ($searchTerms) {
+                $q->where(function ($q2) use ($searchTerms) {
+                    foreach ($searchTerms as $term) {
+                        if (!empty(trim($term))) {
+                            $term = trim($term);
+                            // Jika format "NIK - Nama", ambil NIK saja
+                            if (strpos($term, ' - ') !== false) {
+                                $term = explode(' - ', $term)[0];
+                            }
+                            $q2->orWhere('vcNik', 'like', '%' . $term . '%')
+                                ->orWhereHas('karyawan', function ($q3) use ($term) {
+                                    $q3->where('Nama', 'like', '%' . $term . '%');
+                                });
+                        }
+                    }
+                });
             });
         }
 
@@ -68,7 +120,7 @@ class InstruksiKerjaLemburController extends Controller
             $karyawans = collect([]);
         }
 
-        return view('instruksi-kerja-lembur.index', compact('records', 'startDate', 'endDate', 'nik', 'divisis', 'karyawans'));
+        return view('instruksi-kerja-lembur.index', compact('records', 'startDate', 'endDate', 'search', 'divisis', 'karyawans', 'karyawanList'));
     }
 
     public function store(Request $request)

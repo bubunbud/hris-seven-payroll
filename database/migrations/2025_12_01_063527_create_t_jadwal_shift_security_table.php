@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('t_jadwal_shift_security')) {
+            return;
+        }
+
         Schema::create('t_jadwal_shift_security', function (Blueprint $table) {
             $table->id();
             $table->string('vcNik', 8)->comment('NIK Satpam');

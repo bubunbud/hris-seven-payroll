@@ -33,9 +33,13 @@
                                 <label for="periode_akhir" class="form-label">Periode Akhir</label>
                                 <input type="date" class="form-control" id="periode_akhir" name="periode_akhir" value="{{ $periodeAkhir }}">
                             </div>
-                            <div class="col-md-2">
-                                <label for="nik" class="form-label">NIK</label>
-                                <input type="text" class="form-control" id="nik" name="nik" value="{{ $nik }}" placeholder="Cari NIK">
+                            <div class="col-md-3">
+                                <label for="hpFilterSearch" class="form-label">NIK / Nama</label>
+                                <div class="position-relative">
+                                    <input type="text" class="form-control" id="hpFilterSearch" name="search" value="{{ $search ?? '' }}"
+                                        placeholder="Cari NIK atau Nama (pisah koma = beberapa)" autocomplete="off">
+                                    <div id="hpFilterSearchAutocomplete" class="autocomplete-dropdown" style="display: none;"></div>
+                                </div>
                             </div>
                             <div class="col-md-2">
                                 <label for="hutang_piutang" class="form-label">Hutang/Piutang</label>
@@ -56,7 +60,7 @@
                                     <option value="Kredit" {{ $debitKredit == 'Kredit' ? 'selected' : '' }}>Kredit</option>
                                 </select>
                             </div>
-                            <div class="col-md-2 d-flex align-items-end">
+                            <div class="col-md-1 d-flex align-items-end">
                                 <button type="submit" class="btn btn-primary w-100 shadow-sm">
                                     <i class="fas fa-eye me-2"></i>Preview
                                 </button>
@@ -169,9 +173,10 @@
                             </div>
                         </div>
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-3 position-relative">
                         <label for="vcNik" class="form-label">NIK <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="vcNik" name="vcNik" maxlength="10" required>
+                        <input type="text" class="form-control" id="vcNik" name="vcNik" maxlength="24" required autocomplete="off" placeholder="Ketik NIK atau pilih dari daftar">
+                        <div id="vcNikAutocomplete" class="autocomplete-dropdown" style="display: none;"></div>
                         <div class="form-text" id="namaPreview"></div>
                     </div>
                     <div class="mb-3">
@@ -289,8 +294,23 @@
 </div>
 @endsection
 
+@push('styles')
+<style>
+.autocomplete-dropdown {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: white; border: 1px solid #ced4da; border-radius: 0.375rem;
+    max-height: 250px; overflow-y: auto; z-index: 2000;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15); margin-top: 2px;
+}
+.autocomplete-item { padding: 0.5rem 1rem; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+.autocomplete-item:hover, .autocomplete-item.active { background-color: #f8f9fa; }
+</style>
+@endpush
+
 @push('scripts')
 <script>
+    const karyawanList = @json($karyawanList ?? []);
+
     let isEditMode = false;
     let currentId = null;
 
@@ -310,24 +330,31 @@
         }, 4000);
     }
 
-    // Format number untuk input jumlah
+    // Jumlah: saat ketik jangan pakai parseFloat+toFixed (memaksa "6,00" lalu "6,000" jadi 6).
+    // Format 2 desimal hanya saat blur; saat input hanya izinkan digit + satu koma desimal.
     const jumlahInput = document.getElementById('decJumlah');
     if (jumlahInput) {
         jumlahInput.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/[^\d,]/g, '');
-            value = value.replace(/,/g, '.');
-            if (value && !isNaN(value)) {
-                const num = parseFloat(value);
-                e.target.value = num.toFixed(2).replace('.', ',');
+            let v = e.target.value.replace(/[^\d,\.]/g, '').replace(/\./g, '');
+            const idx = v.indexOf(',');
+            if (idx === -1) {
+                e.target.value = v;
+                return;
             }
+            const whole = v.slice(0, idx).replace(/,/g, '');
+            let frac = v.slice(idx + 1).replace(/,/g, '');
+            if (frac.length > 2) {
+                frac = frac.slice(0, 2);
+            }
+            e.target.value = frac.length > 0 ? `${whole},${frac}` : `${whole},`;
         });
 
         jumlahInput.addEventListener('blur', function(e) {
-            let value = e.target.value.replace(/,/g, '.');
-            if (value && !isNaN(value)) {
-                const num = parseFloat(value);
+            let raw = e.target.value.replace(/\./g, '').replace(',', '.').trim();
+            if (raw !== '' && !isNaN(raw)) {
+                const num = parseFloat(raw);
                 e.target.value = num.toFixed(2).replace('.', ',');
-            } else if (!value) {
+            } else if (!e.target.value.trim()) {
                 e.target.value = '0,00';
             }
         });
@@ -561,5 +588,63 @@
     // Auto submit filter saat tanggal berubah
     document.getElementById('periode_awal')?.addEventListener('change', () => document.getElementById('filterForm').submit());
     document.getElementById('periode_akhir')?.addEventListener('change', () => document.getElementById('filterForm').submit());
+
+    const hpFilterSearch = document.getElementById('hpFilterSearch');
+    const hpFilterSearchAutocomplete = document.getElementById('hpFilterSearchAutocomplete');
+    function hpGetCurrentTypingTerm() {
+        const v = hpFilterSearch.value.trim();
+        return v.split(',')[v.split(',').length - 1]?.trim() || '';
+    }
+    hpFilterSearch?.addEventListener('input', function() {
+        const term = hpGetCurrentTypingTerm().toLowerCase();
+        hpFilterSearchAutocomplete.style.display = term.length < 2 ? 'none' : 'block';
+        if (term.length < 2) return;
+        const results = karyawanList.filter(k => k.search.includes(term)).slice(0, 15);
+        hpFilterSearchAutocomplete.innerHTML = results.length ? results.map(k =>
+            `<div class="autocomplete-item" data-nik="${k.nik}" data-nama="${k.nama}"><strong>${k.nik}</strong> - ${k.nama}</div>`
+        ).join('') : '<div class="autocomplete-item text-muted">Tidak ada</div>';
+        hpFilterSearchAutocomplete.querySelectorAll('.autocomplete-item').forEach((el) => {
+            if (el.dataset.nik) el.addEventListener('click', function() {
+                const terms = hpFilterSearch.value.split(',').map(t => t.trim()).filter(Boolean);
+                terms.pop();
+                terms.push(`${this.dataset.nik} - ${this.dataset.nama}`);
+                hpFilterSearch.value = terms.join(', ');
+                hpFilterSearchAutocomplete.style.display = 'none';
+            });
+        });
+    });
+    document.addEventListener('click', function(e) {
+        if (!hpFilterSearch?.contains(e.target) && !hpFilterSearchAutocomplete?.contains(e.target)) {
+            if (hpFilterSearchAutocomplete) hpFilterSearchAutocomplete.style.display = 'none';
+        }
+    });
+
+    const vcNikInput = document.getElementById('vcNik');
+    const vcNikAutocomplete = document.getElementById('vcNikAutocomplete');
+    vcNikInput?.addEventListener('input', function() {
+        if (vcNikInput.readOnly) {
+            vcNikAutocomplete.style.display = 'none';
+            return;
+        }
+        const term = vcNikInput.value.trim().toLowerCase();
+        vcNikAutocomplete.style.display = term.length < 1 ? 'none' : 'block';
+        if (term.length < 1) return;
+        const results = karyawanList.filter(k => k.search.includes(term)).slice(0, 12);
+        vcNikAutocomplete.innerHTML = results.length ? results.map(k =>
+            `<div class="autocomplete-item" data-nik="${k.nik}" data-nama="${k.nama}"><strong>${k.nik}</strong> - ${k.nama}</div>`
+        ).join('') : '<div class="autocomplete-item text-muted">Tidak ada</div>';
+        vcNikAutocomplete.querySelectorAll('.autocomplete-item').forEach((el) => {
+            if (el.dataset.nik) el.addEventListener('click', function() {
+                vcNikInput.value = this.dataset.nik;
+                document.getElementById('namaPreview').textContent = 'Nama: ' + this.dataset.nama;
+                vcNikAutocomplete.style.display = 'none';
+            });
+        });
+    });
+    document.addEventListener('click', function(e) {
+        if (!vcNikInput?.contains(e.target) && !vcNikAutocomplete?.contains(e.target)) {
+            if (vcNikAutocomplete) vcNikAutocomplete.style.display = 'none';
+        }
+    });
 </script>
 @endpush

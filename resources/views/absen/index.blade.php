@@ -33,21 +33,19 @@
                                     <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                                 </div>
                             </div>
-                            <div class="col-md-2">
-                                <label for="nik" class="form-label">NIK</label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control" id="nik" name="nik"
-                                        value="{{ $nik }}" placeholder="Cari NIK">
-                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <div class="col-md-4">
+                                <label for="search" class="form-label">NIK / Nama</label>
+                                <div class="position-relative">
+                                    <input type="text"
+                                        class="form-control"
+                                        id="search"
+                                        name="search"
+                                        value="{{ $search ?? '' }}"
+                                        placeholder="Cari NIK atau Nama (pisahkan dengan koma)"
+                                        autocomplete="off">
+                                    <div id="searchAutocomplete" class="autocomplete-dropdown" style="display: none;"></div>
                                 </div>
-                            </div>
-                            <div class="col-md-2">
-                                <label for="nama" class="form-label">Nama</label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control" id="nama" name="nama"
-                                        value="{{ $nama }}" placeholder="Cari Nama">
-                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
-                                </div>
+                                <small class="text-muted">Ketik NIK atau nama karyawan untuk mencari (bisa multiple, pisahkan dengan koma)</small>
                             </div>
                             <div class="col-md-2">
                                 <label for="group" class="form-label">Group</label>
@@ -86,6 +84,27 @@
                                         Absen Tidak Lengkap
                                     </label>
                                 </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="hari_kerja_normal" name="hari_kerja_normal"
+                                        value="1" {{ $hariKerjaNormal ? 'checked' : '' }}>
+                                    <label class="form-check-label" for="hari_kerja_normal">
+                                        Hari Kerja Normal (HKN)
+                                    </label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="kerja_hari_libur" name="kerja_hari_libur"
+                                        value="1" {{ $kerjaHariLibur ? 'checked' : '' }}>
+                                    <label class="form-check-label" for="kerja_hari_libur">
+                                        Kerja hari Libur (KHL)
+                                    </label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="telat" name="telat"
+                                        value="1" {{ $telat ? 'checked' : '' }}>
+                                    <label class="form-check-label" for="telat">
+                                        Telat
+                                    </label>
+                                </div>
                             </div>
                         </div>
                     </form>
@@ -93,9 +112,20 @@
             </div>
 
             <!-- Data Count -->
-            <div class="alert alert-info">
-                <i class="fas fa-info-circle me-2"></i>
-                <strong>Jumlah Data {{ number_format($totalData) }}.</strong>
+            <div class="alert alert-info d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Jumlah Data {{ number_format($totalData) }}.</strong>
+                </div>
+                @if($totalData > 0)
+                <div>
+                    <a href="{{ route('absen.print', request()->query()) }}"
+                        class="btn btn-success btn-sm"
+                        target="_blank">
+                        <i class="fas fa-print me-2"></i>Cetak
+                    </a>
+                </div>
+                @endif
             </div>
 
             <!-- Data Table -->
@@ -105,15 +135,18 @@
                         <table class="table table-hover table-striped" id="absenTable">
                             <thead class="table-light sticky-top">
                                 <tr>
-                                    <th width="10%">Tanggal</th>
-                                    <th width="8%">NIK</th>
-                                    <th width="20%">Nama</th>
-                                    <th width="15%">Divisi</th>
-                                    <th width="15%">Bagian</th>
-                                    <th width="10%">Jam Masuk</th>
-                                    <th width="10%">Jam Pulang</th>
-                                    <th width="8%">Total Jam</th>
-                                    <th width="12%">Status</th>
+                                    <th width="8%">Tanggal</th>
+                                    <th width="7%">NIK</th>
+                                    <th width="15%">Nama</th>
+                                    <th width="12%">Divisi</th>
+                                    <th width="12%">Bagian</th>
+                                    <th width="8%">Jam Masuk</th>
+                                    <th width="8%">Jam Pulang</th>
+                                    <th width="7%">Total Jam</th>
+                                    <th width="8%">Shift Terjadwal</th>
+                                    <th width="8%">Shift Aktual</th>
+                                    <th width="7%">Status</th>
+                                    <th width="10%">Keterangan</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -131,17 +164,29 @@
                                 $total_jam = $item['total_jam'] ?? 0;
                                 $source = $item['source'] ?? 'absen';
                                 $shift_masuk = $item['shift_masuk'] ?? null;
+                                $Group_pegawai = $item['Group_pegawai'] ?? null;
+
+                                // Data shift untuk Security
+                                $shift_terjadwal = $item['shift_terjadwal'] ?? [];
+                                $shift_aktual = $item['shift_aktual'] ?? null;
+                                $status_validasi = $item['status_validasi'] ?? null;
 
                                 // Data khusus tidak masuk
                                 $vcKodeAbsen = $item['vcKodeAbsen'] ?? null;
                                 $jenis_absen_keterangan = $item['jenis_absen_keterangan'] ?? null;
                                 $vcKeterangan = $item['vcKeterangan'] ?? null;
 
-                                // Cek apakah tanggal adalah hari libur (weekend atau hari libur nasional)
+                                // Keterangan dari t_absen (untuk data absen)
+                                $vcketerangan = $item['vcketerangan'] ?? null;
+
+                                // Gunakan status yang sudah dihitung di controller (sudah mempertimbangkan tukar hari kerja)
+                                // Jika status belum ada (untuk backward compatibility), hitung ulang dengan logika sederhana
+                                $status = $item['status'] ?? '';
+                                $badgeClass = '';
+
+                                // Jika status belum ada, hitung ulang (fallback untuk backward compatibility)
+                                if (empty($status) && $source === 'absen') {
                                 $tanggalObj = \Carbon\Carbon::parse($dtTanggal);
-                                $isWeekend = in_array($tanggalObj->dayOfWeek, [0, 6]); // 0 = Minggu, 6 = Sabtu
-                                $isHoliday = in_array($dtTanggal, $hariLiburList);
-                                $isHariLibur = $isWeekend || $isHoliday;
 
                                 // Hitung total jam jika ada data
                                 if ($dtJamMasuk && $dtJamKeluar) {
@@ -151,7 +196,16 @@
                                 $keluar->addDay();
                                 }
                                 $total_jam = round($masuk->diffInHours($keluar, true), 1);
+                                } else {
+                                $total_jam = $total_jam ?? 0;
                                 }
+
+                                // Note: Untuk penentuan status yang akurat dengan tukar hari kerja,
+                                // sebaiknya gunakan status yang sudah dihitung di controller
+                                // Logika di bawah ini hanya fallback dan tidak mempertimbangkan tukar hari kerja
+                                $isWeekend = in_array($tanggalObj->dayOfWeek, [0, 6]);
+                                $isHoliday = in_array($dtTanggal, $hariLiburList);
+                                $isHariLibur = $isWeekend || $isHoliday;
 
                                 // Cek telat: jam masuk > jam shift masuk
                                 $isTelat = false;
@@ -165,7 +219,6 @@
                                 $tMasuk = $tanggalObj->copy()->setTimeFromTimeString($jamMasuk);
                                 $tShiftMasuk = $tanggalObj->copy()->setTimeFromTimeString($shiftMasuk);
 
-                                // Jika jam masuk lebih dari jam shift masuk (bahkan 1 menit pun sudah telat)
                                 if ($tMasuk->greaterThan($tShiftMasuk)) {
                                 $isTelat = true;
                                 }
@@ -174,42 +227,56 @@
                                 }
                                 }
 
-                                // Tentukan status
-                                $status = '';
-                                $badgeClass = '';
-
-                                if ($source === 'tidak_masuk') {
-                                // Data dari t_tidak_masuk
-                                $status = $jenis_absen_keterangan ?? $vcKodeAbsen ?? 'Tidak Masuk';
-                                $badgeClass = 'bg-danger';
-                                } elseif (!$dtJamMasuk && !$dtJamKeluar) {
-                                // Tidak ada jam masuk dan keluar
+                                // Tentukan status (fallback logic)
+                                if (!$dtJamMasuk && !$dtJamKeluar) {
                                 $status = 'Tidak Masuk';
                                 $badgeClass = 'bg-danger';
                                 } elseif ($isTelat) {
-                                // Telat: jam masuk > jam shift masuk
                                 $status = 'Telat';
                                 $badgeClass = 'bg-warning text-dark';
                                 } elseif (($dtJamMasuk && !$dtJamKeluar) || (!$dtJamMasuk && $dtJamKeluar)) {
-                                // Absen tidak lengkap: hanya ada satu dari jam masuk/keluar (tidak ada pasangan)
                                 $status = 'ATL';
                                 $badgeClass = 'bg-warning text-dark';
                                 } elseif ($isHariLibur && ($dtJamMasuk || $dtJamKeluar || $dtJamMasukLembur)) {
-                                // KHL: Hari libur (weekend/holiday) dan ada jam masuk/keluar/lembur
                                 $status = 'KHL';
                                 $badgeClass = 'bg-info';
                                 } elseif ($dtJamMasuk && $dtJamKeluar && $total_jam >= 8) {
-                                // Hari kerja normal (ada jam masuk dan keluar, minimal 8 jam)
                                 $status = 'HKN';
                                 $badgeClass = 'bg-success';
                                 } elseif ($dtJamMasuk && $dtJamKeluar && $total_jam > 0 && $total_jam < 8) {
-                                    // HC: Ada jam masuk dan keluar tapi jam kerja kurang dari 8 jam
                                     $status='HC' ;
                                     $badgeClass='bg-warning text-dark' ;
                                     } else {
-                                    // Lainnya (tidak ada jam masuk atau keluar)
                                     $status='ATL' ;
                                     $badgeClass='bg-warning text-dark' ;
+                                    }
+                                    }
+
+                                    // Tentukan badge class berdasarkan status (jika belum di-set)
+                                    if (empty($badgeClass)) {
+                                    switch ($status) {
+                                    case 'Tidak Masuk' :
+                                    $badgeClass='bg-danger' ;
+                                    break;
+                                    case 'Telat' :
+                                    $badgeClass='bg-warning text-dark' ;
+                                    break;
+                                    case 'ATL' :
+                                    $badgeClass='bg-warning text-dark' ;
+                                    break;
+                                    case 'KHL' :
+                                    $badgeClass='bg-info' ;
+                                    break;
+                                    case 'HKN' :
+                                    $badgeClass='bg-success' ;
+                                    break;
+                                    case 'HC' :
+                                    $badgeClass='bg-warning text-dark' ;
+                                    break;
+                                    default:
+                                    $badgeClass='bg-secondary' ;
+                                    break;
+                                    }
                                     }
                                     @endphp
                                     <tr>
@@ -258,15 +325,47 @@
                                         @endif
                                     </td>
                                     <td>
+                                        @if($Group_pegawai === 'Security' && !empty($shift_terjadwal))
+                                        @foreach($shift_terjadwal as $shift)
+                                        <span class="badge bg-primary me-1">S{{ $shift }}</span>
+                                        @endforeach
+                                        @else
+                                        <span class="text-muted">-</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if($Group_pegawai === 'Security' && $shift_aktual)
+                                        <span class="badge bg-info">S{{ $shift_aktual }}</span>
+                                        @if($status_validasi === 'tidak_sesuai')
+                                        <br><small class="text-danger"><i class="fas fa-exclamation-triangle"></i> Tidak sesuai</small>
+                                        @elseif($status_validasi === 'sesuai')
+                                        <br><small class="text-success"><i class="fas fa-check"></i> Sesuai</small>
+                                        @elseif($status_validasi === 'tidak_masuk')
+                                        <br><small class="text-warning"><i class="fas fa-times"></i> Tidak masuk</small>
+                                        @endif
+                                        @else
+                                        <span class="text-muted">-</span>
+                                        @endif
+                                    </td>
+                                    <td>
                                         <span class="badge {{ $badgeClass }}">{{ $status }}</span>
                                         @if($source === 'tidak_masuk' && $vcKeterangan)
                                         <br><small class="text-muted">{{ strlen($vcKeterangan) > 20 ? substr($vcKeterangan, 0, 20) . '...' : $vcKeterangan }}</small>
                                         @endif
                                     </td>
+                                    <td>
+                                        @if($source === 'absen' && $vcketerangan)
+                                        <small class="text-muted">{{ $vcketerangan }}</small>
+                                        @elseif($source === 'tidak_masuk' && $vcKeterangan)
+                                        <small class="text-muted">{{ $vcKeterangan }}</small>
+                                        @else
+                                        <span class="text-muted">-</span>
+                                        @endif
+                                    </td>
                                     </tr>
                                     @empty
                                     <tr>
-                                        <td colspan="9" class="text-center py-4">
+                                        <td colspan="12" class="text-center py-4">
                                             <i class="fas fa-inbox fa-2x text-muted mb-2"></i>
                                             <p class="text-muted mb-0">Tidak ada data absensi untuk periode ini</p>
                                         </td>
@@ -330,7 +429,194 @@
 
 @endsection
 
+@push('styles')
+<style>
+    .autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ced4da;
+        border-radius: 0.375rem;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        margin-top: 2px;
+    }
+
+    .autocomplete-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.2s;
+    }
+
+    .autocomplete-item:hover,
+    .autocomplete-item.active {
+        background-color: #f8f9fa;
+    }
+
+    .autocomplete-item:last-child {
+        border-bottom: none;
+    }
+
+    .autocomplete-item strong {
+        color: #0d6efd;
+    }
+
+    .autocomplete-item small {
+        color: #6c757d;
+        display: block;
+        margin-top: 0.25rem;
+    }
+</style>
+@endpush
+
 @push('scripts')
+<script>
+    let searchTimeout;
+    let selectedIndex = -1;
+    const searchInput = document.getElementById('search');
+    const autocompleteDiv = document.getElementById('searchAutocomplete');
+    // Data karyawan untuk pencarian lokal (dibatasi di controller)
+    const karyawanList = @json($karyawanList);
+
+    // Fungsi untuk mendapatkan nilai NIK dari input (handle format "NIK - Nama" atau multiple dengan koma)
+    function getCurrentSearchTerms() {
+        const value = searchInput.value.trim();
+        if (!value) return [];
+        return value.split(',').map(term => term.trim()).filter(term => term.length > 0);
+    }
+
+    // Fungsi untuk mendapatkan term yang sedang diketik (term terakhir)
+    function getCurrentTypingTerm() {
+        const value = searchInput.value.trim();
+        if (!value) return '';
+        const terms = value.split(',');
+        return terms[terms.length - 1].trim();
+    }
+
+    // Autocomplete search (pencarian lokal, tanpa fetch)
+    searchInput.addEventListener('input', function() {
+        const currentTerm = getCurrentTypingTerm().toLowerCase();
+
+        clearTimeout(searchTimeout);
+
+        if (currentTerm.length === 0) {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+            return;
+        }
+
+        if (currentTerm.length < 2) {
+            autocompleteDiv.style.display = 'none';
+            return;
+        }
+
+        // Debounce 200ms
+        searchTimeout = setTimeout(() => {
+            const results = karyawanList.filter(k => k.search.includes(currentTerm)).slice(0, 20);
+            displayAutocomplete(results);
+        }, 200);
+    });
+
+    // Display autocomplete results
+    function displayAutocomplete(karyawans) {
+        if (!karyawans || karyawans.length === 0) {
+            autocompleteDiv.innerHTML = '<div class="autocomplete-item">Tidak ada karyawan ditemukan</div>';
+            autocompleteDiv.style.display = 'block';
+            return;
+        }
+
+        autocompleteDiv.innerHTML = '';
+        karyawans.forEach((karyawan, index) => {
+            if (!karyawan || !karyawan.nik) return; // Skip invalid data
+
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.innerHTML = `
+                <strong>${karyawan.nik || ''}</strong> - ${karyawan.nama || ''}
+                <small>Divisi: ${karyawan.divisi || '-'} | Bagian: ${karyawan.bagian || '-'}</small>
+            `;
+            item.addEventListener('click', function() {
+                selectKaryawan(karyawan);
+            });
+            autocompleteDiv.appendChild(item);
+        });
+        autocompleteDiv.style.display = 'block';
+        selectedIndex = -1;
+    }
+
+    // Select karyawan from autocomplete
+    function selectKaryawan(karyawan) {
+        const currentTerms = getCurrentSearchTerms();
+        const currentTerm = getCurrentTypingTerm();
+
+        // Hapus term terakhir yang sedang diketik
+        currentTerms.pop();
+
+        // Tambahkan karyawan yang dipilih
+        const newTerm = `${karyawan.nik} - ${karyawan.nama}`;
+        currentTerms.push(newTerm);
+
+        // Update input value
+        searchInput.value = currentTerms.join(', ');
+        autocompleteDiv.style.display = 'none';
+        selectedIndex = -1;
+
+        // Focus kembali ke input
+        searchInput.focus();
+    }
+
+    // Hide autocomplete when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!searchInput.contains(e.target) && !autocompleteDiv.contains(e.target)) {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        }
+    });
+
+    // Handle keyboard navigation
+    searchInput.addEventListener('keydown', function(e) {
+        const items = autocompleteDiv.querySelectorAll('.autocomplete-item');
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (autocompleteDiv.style.display === 'none') return;
+            selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+            updateSelectedItem(items, selectedIndex);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (autocompleteDiv.style.display === 'none') return;
+            selectedIndex = Math.max(selectedIndex - 1, -1);
+            updateSelectedItem(items, selectedIndex);
+        } else if (e.key === 'Enter' && selectedIndex >= 0 && items[selectedIndex]) {
+            e.preventDefault();
+            items[selectedIndex].click();
+        } else if (e.key === 'Escape') {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        } else if (e.key === 'Tab') {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        }
+    });
+
+    function updateSelectedItem(items, index) {
+        items.forEach((item, i) => {
+            if (i === index) {
+                item.classList.add('active');
+                item.scrollIntoView({
+                    block: 'nearest'
+                });
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+</script>
 <script>
     function showAlert(type, message) {
         const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';

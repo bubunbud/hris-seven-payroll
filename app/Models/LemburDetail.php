@@ -28,6 +28,7 @@ class LemburDetail extends Model
         'vcDeskripsiLembur',
         'vcPenanggungBebanLembur',
         'vcPenanggungBebanLainnya',
+        'decLemburExternal',
         'dtCreate',
         'dtChange',
     ];
@@ -35,6 +36,7 @@ class LemburDetail extends Model
     protected $casts = [
         'decDurasiLembur' => 'decimal:2',
         'intDurasiIstirahat' => 'integer',
+        'decLemburExternal' => 'decimal:2',
         'dtCreate' => 'datetime',
         'dtChange' => 'datetime',
     ];

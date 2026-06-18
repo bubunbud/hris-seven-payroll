@@ -241,7 +241,7 @@
                 ($closing->decUangMakan ?? 0) +
                 ($closing->decTransport ?? 0) +
                 ($closing->decPremi ?? 0) +
-                (($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0)) +
+                (($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0) + ($closing->decTotallembur4 ?? 0)) +
                 ($closing->decRapel ?? 0);
 
                 // Hitung Pot Lain-lain = decPotonganLain + decPotonganAbsen + decPotonganHC

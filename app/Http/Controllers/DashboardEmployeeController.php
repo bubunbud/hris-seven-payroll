@@ -473,7 +473,11 @@ class DashboardEmployeeController extends Controller
                 + ($slipGajiTerbaru->decTransport ?? 0)
                 + ($slipGajiTerbaru->decTotallembur1 ?? 0)
                 + ($slipGajiTerbaru->decTotallembur2 ?? 0)
-                + ($slipGajiTerbaru->decTotallembur3 ?? 0);
+                + ($slipGajiTerbaru->decTotallembur3 ?? 0)
+                + ($slipGajiTerbaru->decTotallembur4 ?? 0)
+                + ($slipGajiTerbaru->decRapel ?? 0)
+                + ($slipGajiTerbaru->decPremi ?? 0)
+                + ($slipGajiTerbaru->decTunjanganJabatan ?? 0);
             
             $totalPotongan = ($slipGajiTerbaru->decPotonganHC ?? 0)
                 + ($slipGajiTerbaru->decPotonganBPR ?? 0)
@@ -513,7 +517,11 @@ class DashboardEmployeeController extends Controller
                     + ($slip->decTransport ?? 0)
                     + ($slip->decTotallembur1 ?? 0)
                     + ($slip->decTotallembur2 ?? 0)
-                    + ($slip->decTotallembur3 ?? 0);
+                    + ($slip->decTotallembur3 ?? 0)
+                    + ($slip->decTotallembur4 ?? 0)
+                    + ($slip->decRapel ?? 0)
+                    + ($slip->decPremi ?? 0)
+                    + ($slip->decTunjanganJabatan ?? 0);
                 
                 $totalPotongan = ($slip->decPotonganHC ?? 0)
                     + ($slip->decPotonganBPR ?? 0)

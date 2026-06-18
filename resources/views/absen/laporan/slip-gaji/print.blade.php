@@ -55,9 +55,12 @@
                         <hr>
 
                         @php
+                            $jamLibur4x = max(0, (float)($closing->decJamLemburLibur3 ?? 0) - 1);
+                            $jamJ4 = (float)($closing->decJamLemburKerja4 ?? 0) + $jamLibur4x;
                             $jumlahBersih = $closing->decGapok + $closing->decUangMakan + $closing->decTransport + 
                                           $closing->decPremi + $closing->decTotallembur1 + $closing->decTotallembur2 + 
-                                          $closing->decTotallembur3 + $closing->decRapel;
+                                          $closing->decTotallembur3 + (float)($closing->decTotallembur4 ?? 0) + $closing->decRapel
+                                          + (float)($closing->decTunjanganJabatan ?? 0);
                             $jumlahPotongan = $closing->decPotonganBPJSKes + $closing->decPotonganBPJSJHT + 
                                             $closing->decPotonganBPJSJP + $closing->decIuranSPN + 
                                             $closing->decPotonganKoperasi + $closing->decPotonganBPR + 
@@ -147,6 +150,18 @@
                         </div>
                         @endif
 
+                        @if(($closing->decTotallembur4 ?? 0) > 0)
+                        <div class="row mb-2">
+                            <div class="col-6">
+                                <strong>Lembur J4:</strong>
+                            </div>
+                            <div class="col-6 text-end">
+                                {{ number_format($jamJ4, 2) }} jam
+                                (Rp. {{ number_format($closing->decTotallembur4, 2, ',', '.') }})
+                            </div>
+                        </div>
+                        @endif
+
                         @if($closing->decPremi > 0)
                         <div class="row mb-2">
                             <div class="col-6">
@@ -165,6 +180,17 @@
                             </div>
                             <div class="col-6 text-end">
                                 Rp. {{ number_format($closing->decRapel, 2, ',', '.') }}
+                            </div>
+                        </div>
+                        @endif
+
+                        @if(($closing->decTunjanganJabatan ?? 0) > 0)
+                        <div class="row mb-2">
+                            <div class="col-6">
+                                <strong>Tunjangan Jabatan:</strong>
+                            </div>
+                            <div class="col-6 text-end">
+                                Rp. {{ number_format($closing->decTunjanganJabatan, 2, ',', '.') }}
                             </div>
                         </div>
                         @endif

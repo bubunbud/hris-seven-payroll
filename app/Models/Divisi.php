@@ -31,6 +31,9 @@ class Divisi extends Model
         'vcKeuangan',
         'vPPIC',
         'vcPlantManager',
+        'vcHrGaManager',
+        'vcSeniorFinanceManager',
+        'vcGmBackOffice',
         'dtCreate',
         'dtChange'
     ];

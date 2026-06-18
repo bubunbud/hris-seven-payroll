@@ -22,10 +22,16 @@ class LemburCalculationService
         $rupiahKerja1 = 0;
         $jamKerja2 = 0;
         $rupiahKerja2 = 0;
+        $jamKerja3 = 0;
+        $rupiahKerja3 = 0;
+        $jamKerja4 = 0;
+        $rupiahKerja4 = 0;
         $jamLibur2 = 0;
         $rupiahLibur2 = 0;
         $jamLibur3 = 0;
         $rupiahLibur3 = 0;
+        $rupiahLibur3x = 0;
+        $rupiahLibur4x = 0;
         $totalNominal = 0;
 
         if ($isHariLibur) {
@@ -36,7 +42,9 @@ class LemburCalculationService
                 $jam3 = $totalJamLembur > 9 ? min(3, $totalJamLembur - 9) : 0;
 
                 $rupiah2 = $jam1 * 2 * $ratePerJam;
-                $rupiah3 = $jam2 * 3 * $ratePerJam + $jam3 * 4 * $ratePerJam;
+                $rupiahLibur3x = $jam2 * 3 * $ratePerJam;
+                $rupiahLibur4x = $jam3 * 4 * $ratePerJam;
+                $rupiah3 = $rupiahLibur3x + $rupiahLibur4x;
 
                 $jamLibur2 = $jam1;
                 $jamLibur3 = $jam2 + $jam3;
@@ -46,24 +54,28 @@ class LemburCalculationService
                 $totalNominal = $rupiahLibur2 + $rupiahLibur3;
             }
         } else {
-            // Hari kerja normal (HKN): 1.5x (jam pertama), 2x (jam berikutnya)
-            // Perhitungan: Jam ke-1 maksimal 1 jam per hari, sisanya masuk ke Jam ke-2
+            // Hari kerja normal (HKN): J1 1.5× (max 1 jam), J2 2× (max 8 jam), J3 3× (max 1 jam), J4 4× (sisa)
             if ($totalJamLembur > 0) {
-                // Jam ke-1: maksimal 1 jam per hari (hanya di hari kerja)
                 $jam1 = min(1, $totalJamLembur);
-                // Jam ke-2: sisa jam setelah jam ke-1 (hanya di hari kerja)
-                $jam2 = max(0, $totalJamLembur - $jam1);
+                $jam2 = min(8, max(0, $totalJamLembur - 1));
+                $jam3 = min(1, max(0, $totalJamLembur - 9));
+                $jam4 = max(0, $totalJamLembur - 10);
 
-                // Hitung rupiah: Jam ke-1 = 1.5x, Jam ke-2 = 2x
                 $rupiah1 = $jam1 * 1.5 * $ratePerJam;
                 $rupiah2 = $jam2 * 2 * $ratePerJam;
+                $rupiah3 = $jam3 * 3 * $ratePerJam;
+                $rupiah4 = $jam4 * 4 * $ratePerJam;
 
                 $jamKerja1 = $jam1;
                 $jamKerja2 = $jam2;
+                $jamKerja3 = $jam3;
+                $jamKerja4 = $jam4;
                 $rupiahKerja1 = $rupiah1;
                 $rupiahKerja2 = $rupiah2;
+                $rupiahKerja3 = $rupiah3;
+                $rupiahKerja4 = $rupiah4;
 
-                $totalNominal = $rupiahKerja1 + $rupiahKerja2;
+                $totalNominal = $rupiahKerja1 + $rupiahKerja2 + $rupiahKerja3 + $rupiahKerja4;
             }
         }
 
@@ -71,12 +83,18 @@ class LemburCalculationService
             'nominal' => round($totalNominal, 2),
             'jam_kerja_1' => $jamKerja1,
             'jam_kerja_2' => $jamKerja2,
+            'jam_kerja_3' => $jamKerja3,
+            'jam_kerja_4' => $jamKerja4,
             'rupiah_kerja_1' => round($rupiahKerja1, 2),
             'rupiah_kerja_2' => round($rupiahKerja2, 2),
+            'rupiah_kerja_3' => round($rupiahKerja3, 2),
+            'rupiah_kerja_4' => round($rupiahKerja4, 2),
             'jam_libur_2' => $jamLibur2,
             'jam_libur_3' => $jamLibur3,
             'rupiah_libur_2' => round($rupiahLibur2, 2),
             'rupiah_libur_3' => round($rupiahLibur3, 2),
+            'rupiah_libur_3x' => round($rupiahLibur3x, 2),
+            'rupiah_libur_4x' => round($rupiahLibur4x, 2),
         ];
     }
 

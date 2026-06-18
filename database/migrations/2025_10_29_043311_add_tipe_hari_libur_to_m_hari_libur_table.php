@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('m_hari_libur', function (Blueprint $table) {
-            $table->string('vcTipeHariLibur', 20)->nullable()->after('vcKeterangan');
-        });
+        if (!Schema::hasColumn('m_hari_libur', 'vcTipeHariLibur')) {
+            Schema::table('m_hari_libur', function (Blueprint $table) {
+                $table->string('vcTipeHariLibur', 20)->nullable()->after('vcKeterangan');
+            });
+        }
     }
 
     /**
@@ -21,8 +23,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('m_hari_libur', function (Blueprint $table) {
-            $table->dropColumn('vcTipeHariLibur');
-        });
+        if (Schema::hasColumn('m_hari_libur', 'vcTipeHariLibur')) {
+            Schema::table('m_hari_libur', function (Blueprint $table) {
+                $table->dropColumn('vcTipeHariLibur');
+            });
+        }
     }
 };

@@ -27,30 +27,45 @@ use App\Http\Controllers\HutangPiutangController;
 use App\Http\Controllers\RealisasiLemburController;
 use App\Http\Controllers\SaldoCutiController;
 use App\Http\Controllers\PeriodeGajiController;
+use App\Http\Controllers\PeriodeThrController;
 use App\Http\Controllers\ClosingController;
+use App\Http\Controllers\ClosingThrController;
+use App\Http\Controllers\ListThrController;
 use App\Http\Controllers\SlipGajiController;
+use App\Http\Controllers\SlipThrController;
 use App\Http\Controllers\RekapUpahKaryawanController;
 use App\Http\Controllers\RekapUpahFinanceVerController;
 use App\Http\Controllers\UpdateClosingGajiController;
 use App\Http\Controllers\HirarkiController;
 use App\Http\Controllers\InstruksiKerjaLemburController;
+use App\Http\Controllers\PerjalananDinasController;
+use App\Http\Controllers\BiayaPerjalananDinasController;
 use App\Http\Controllers\SeksiController;
 use App\Http\Controllers\TarikDataAbsensiController;
+use App\Http\Controllers\TarikDataAbsensiApiController;
 use App\Http\Controllers\TarikDataIzinController;
 use App\Http\Controllers\TarikDataTidakMasukController;
+use App\Http\Controllers\ListPengajuanCutiApiController;
+use App\Http\Controllers\ListPengajuanIzinApiController;
 use App\Http\Controllers\TarikDataHutangPiutangController;
 use App\Http\Controllers\JadwalShiftSecurityController;
+use App\Http\Controllers\RekapKeterlambatanController;
 use App\Http\Controllers\MasterShiftSecurityController;
 use App\Http\Controllers\OverrideJadwalSecurityController;
+use App\Http\Controllers\BrowseAbsensiSecurityController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\ActivityLogController;
+use App\Http\Controllers\UserLoginActivityController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DashboardGroupController;
 use App\Http\Controllers\DashboardBUController;
 use App\Http\Controllers\DashboardEmployeeController;
+use App\Http\Controllers\RekapUpahPerBagianDeptController;
+use App\Http\Controllers\RekapUangMakanTransportPerBagianDeptController;
+use App\Http\Controllers\LaporanThrController;
 
 /*
 |--------------------------------------------------------------------------
@@ -124,12 +139,23 @@ Route::middleware(['auth'])->group(function () {
             Route::put('karyawan/{nik}/pelatihan/{nm_pelatihan}', [KaryawanController::class, 'updatePelatihan']);
             Route::delete('karyawan/{nik}/pelatihan/{nm_pelatihan}', [KaryawanController::class, 'deletePelatihan']);
             Route::post('karyawan/copy-pelatihan', [KaryawanController::class, 'copyPelatihan'])->name('karyawan.copy-pelatihan');
+            Route::get('karyawan/{id}/mutasi', [KaryawanController::class, 'getMutasi']);
+            Route::post('karyawan/{nik}/mutasi', [KaryawanController::class, 'addMutasi']);
+            Route::put('karyawan/{nik}/mutasi/{noSK}', [KaryawanController::class, 'updateMutasi']);
+            Route::delete('karyawan/{nik}/mutasi/{noSK}', [KaryawanController::class, 'deleteMutasi']);
+            Route::post('karyawan/copy-mutasi', [KaryawanController::class, 'copyMutasi'])->name('karyawan.copy-mutasi');
+            Route::get('karyawan/{id}/catatan-karyawan', [KaryawanController::class, 'getKaryawanCatatan']);
+            Route::post('karyawan/{nik}/catatan-karyawan', [KaryawanController::class, 'addKaryawanCatatan']);
+            Route::put('karyawan/{nik}/catatan-karyawan/{id}', [KaryawanController::class, 'updateKaryawanCatatan']);
+            Route::delete('karyawan/{nik}/catatan-karyawan/{id}', [KaryawanController::class, 'deleteKaryawanCatatan']);
+            Route::post('karyawan/copy-catatan-karyawan', [KaryawanController::class, 'copyKaryawanCatatan'])->name('karyawan.copy-catatan-karyawan');
             Route::post('karyawan/get-departemens', [KaryawanController::class, 'getDepartemensByDivisi'])->name('karyawan.get-departemens');
             Route::post('karyawan/get-bagians', [KaryawanController::class, 'getBagiansByDivisiDept'])->name('karyawan.get-bagians');
             Route::post('karyawan/get-seksis', [KaryawanController::class, 'getSeksisByDivisiDeptBagian'])->name('karyawan.get-seksis');
             Route::post('karyawan/get-jabatans', [KaryawanController::class, 'getJabatansByDivisi'])->name('karyawan.get-jabatans');
             Route::post('karyawan/generate-nik', [KaryawanController::class, 'generateNik'])->name('karyawan.generate-nik');
             Route::get('karyawan/{nik}/copy-data', [KaryawanController::class, 'getKaryawanForCopy'])->name('karyawan.copy-data');
+            Route::get('karyawan/{nik}/biodata-cetak', [KaryawanController::class, 'biodataCetak'])->name('karyawan.biodata-cetak');
             Route::post('karyawan/copy-keluarga', [KaryawanController::class, 'copyKeluarga'])->name('karyawan.copy-keluarga');
         });
         Route::middleware(['permission:view-master-data,view-master-golongan'])->group(function () {
@@ -175,6 +201,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('edit-absensi/store', [EditAbsensiController::class, 'store'])->name('edit-absensi.store');
             Route::get('edit-absensi/edit', [EditAbsensiController::class, 'edit'])->name('edit-absensi.edit');
             Route::post('edit-absensi/update', [EditAbsensiController::class, 'update'])->name('edit-absensi.update');
+            Route::delete('edit-absensi/delete', [EditAbsensiController::class, 'destroy'])->name('edit-absensi.destroy');
         });
 
         // Autocomplete karyawan (cukup login, tanpa middleware permission khusus)
@@ -193,6 +220,12 @@ Route::middleware(['auth'])->group(function () {
         });
         Route::middleware(['permission:view-absensi,view-statistik-absensi'])->group(function () {
             Route::get('absensi/statistik', [StatistikAbsensiController::class, 'index'])->name('absensi.statistik.index');
+        });
+        Route::middleware(['permission:view-absensi,view-statistik-absensi'])->group(function () {
+            Route::get('absensi/rekap-keterlambatan', [RekapKeterlambatanController::class, 'index'])->name('rekap-keterlambatan.index');
+            Route::get('absensi/rekap-keterlambatan/preview', [RekapKeterlambatanController::class, 'preview'])->name('rekap-keterlambatan.preview');
+            Route::get('absensi/rekap-keterlambatan/get-departemens', [RekapKeterlambatanController::class, 'getDepartemensByDivisi'])->name('rekap-keterlambatan.get-departemens');
+            Route::get('absensi/rekap-keterlambatan/get-bagians', [RekapKeterlambatanController::class, 'getBagiansByDepartemen'])->name('rekap-keterlambatan.get-bagians');
         });
         Route::middleware(['permission:view-absensi,view-rekapitulasi-absensi'])->group(function () {
             Route::get('absensi/rekapitulasi', [RekapitulasiAbsensiController::class, 'index'])->name('rekapitulasi-absensi.index');
@@ -241,12 +274,37 @@ Route::middleware(['auth'])->group(function () {
             Route::post('instruksi-kerja-lembur/check-jenis-lembur', [InstruksiKerjaLemburController::class, 'checkJenisLembur'])->name('instruksi-kerja-lembur.check-jenis-lembur');
             Route::post('instruksi-kerja-lembur/calculate-nominal', [InstruksiKerjaLemburController::class, 'calculateLemburNominal'])->name('instruksi-kerja-lembur.calculate-nominal');
         });
+        Route::middleware(['permission:view-absensi,view-perjalanan-dinas'])->group(function () {
+            Route::get('perjalanan-dinas', [PerjalananDinasController::class, 'index'])->name('perjalanan-dinas.index');
+            Route::post('perjalanan-dinas', [PerjalananDinasController::class, 'store'])->name('perjalanan-dinas.store');
+            Route::get('perjalanan-dinas/{id}', [PerjalananDinasController::class, 'show'])->name('perjalanan-dinas.show');
+            Route::put('perjalanan-dinas/{id}', [PerjalananDinasController::class, 'update'])->name('perjalanan-dinas.update');
+            Route::delete('perjalanan-dinas/{id}', [PerjalananDinasController::class, 'destroy'])->name('perjalanan-dinas.destroy');
+            Route::get('perjalanan-dinas/{id}/print', [PerjalananDinasController::class, 'print'])->name('perjalanan-dinas.print');
+            Route::get('perjalanan-dinas/get-karyawan-data', [PerjalananDinasController::class, 'getKaryawanData'])->name('perjalanan-dinas.get-karyawan-data');
+            Route::post('perjalanan-dinas/{id}/update-absensi', [PerjalananDinasController::class, 'triggerUpdateAbsensi'])->name('perjalanan-dinas.trigger-update-absensi');
+        });
+
+        // Biaya Perjalanan Dinas (BPD)
+        Route::middleware(['permission:view-absensi,view-perjalanan-dinas,view-biaya-perjalanan-dinas'])->group(function () {
+            Route::get('biaya-perjalanan-dinas', [BiayaPerjalananDinasController::class, 'index'])->name('biaya-perjalanan-dinas.index');
+            Route::post('biaya-perjalanan-dinas', [BiayaPerjalananDinasController::class, 'store'])->name('biaya-perjalanan-dinas.store');
+            Route::get('biaya-perjalanan-dinas/{id}', [BiayaPerjalananDinasController::class, 'show'])->name('biaya-perjalanan-dinas.show');
+            Route::put('biaya-perjalanan-dinas/{id}', [BiayaPerjalananDinasController::class, 'update'])->name('biaya-perjalanan-dinas.update');
+            Route::delete('biaya-perjalanan-dinas/{id}', [BiayaPerjalananDinasController::class, 'destroy'])->name('biaya-perjalanan-dinas.destroy');
+            Route::get('biaya-perjalanan-dinas/{id}/print', [BiayaPerjalananDinasController::class, 'print'])->name('biaya-perjalanan-dinas.print');
+            Route::get('biaya-perjalanan-dinas/get-rpd-data/{noRpd}', [BiayaPerjalananDinasController::class, 'getRpdData'])->name('biaya-perjalanan-dinas.get-rpd-data');
+            Route::get('biaya-perjalanan-dinas/convert-terbilang/{number}', [BiayaPerjalananDinasController::class, 'convertTerbilang'])->name('biaya-perjalanan-dinas.convert-terbilang');
+        });
         Route::middleware(['permission:view-absensi,view-saldo-cuti'])->group(function () {
             Route::get('saldo-cuti', [SaldoCutiController::class, 'index'])->name('saldo-cuti.index');
             Route::post('saldo-cuti', [SaldoCutiController::class, 'store'])->name('saldo-cuti.store');
             Route::get('saldo-cuti/{id}', [SaldoCutiController::class, 'show'])->name('saldo-cuti.show');
             Route::post('saldo-cuti/migrate', [SaldoCutiController::class, 'migrateSaldo'])->name('saldo-cuti.migrate');
             Route::post('saldo-cuti/import', [SaldoCutiController::class, 'importExcel'])->name('saldo-cuti.import');
+        });
+        Route::middleware(['permission:view-absensi,view-jadwal-shift-satpam'])->group(function () {
+            Route::get('browse-absensi-security', [BrowseAbsensiSecurityController::class, 'index'])->name('browse-absensi-security.index');
         });
         Route::middleware(['permission:view-absensi,view-jadwal-shift-satpam'])->group(function () {
             Route::get('jadwal-shift-security', [JadwalShiftSecurityController::class, 'index'])->name('jadwal-shift-security.index');
@@ -294,10 +352,23 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('periode-gaji', [PeriodeGajiController::class, 'destroy'])->name('periode-gaji.destroy');
             Route::post('periode-gaji/delete', [PeriodeGajiController::class, 'destroy'])->name('periode-gaji.destroy-post');
         });
+        Route::middleware(['permission:view-proses-gaji,view-periode-thr'])->group(function () {
+            Route::get('periode-thr', [PeriodeThrController::class, 'index'])->name('periode-thr.index');
+            Route::post('periode-thr', [PeriodeThrController::class, 'store'])->name('periode-thr.store');
+            Route::delete('periode-thr', [PeriodeThrController::class, 'destroy'])->name('periode-thr.destroy');
+            Route::post('periode-thr/delete', [PeriodeThrController::class, 'destroy'])->name('periode-thr.destroy-post');
+        });
         Route::middleware(['permission:view-proses-gaji,view-closing-gaji'])->group(function () {
             Route::get('closing', [ClosingController::class, 'index'])->name('closing.index');
             Route::post('closing', [ClosingController::class, 'store'])->name('closing.store');
             Route::get('closing/{periodeAwal}/{periodeAkhir}/{nik}/{periode}/{closingKe}', [ClosingController::class, 'show'])->name('closing.show');
+        });
+        Route::middleware(['permission:view-proses-gaji,view-closing-thr'])->group(function () {
+            Route::get('closing-thr', [ClosingThrController::class, 'index'])->name('closing-thr.index');
+            Route::post('closing-thr', [ClosingThrController::class, 'store'])->name('closing-thr.store');
+        });
+        Route::middleware(['permission:view-proses-gaji,view-list-thr'])->group(function () {
+            Route::get('list-thr', [ListThrController::class, 'index'])->name('list-thr.index');
         });
         Route::middleware(['permission:view-proses-gaji,view-update-closing-gaji'])->group(function () {
             Route::resource('update-closing-gaji', UpdateClosingGajiController::class);
@@ -311,11 +382,15 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // Laporan Routes (permission-based: group atau granular)
-    Route::middleware(['permission:view-laporan,view-slip-gaji,view-rekap-upah-karyawan,view-rekap-uang-makan-transport,view-rekap-bank,view-rekap-upah-per-bagian,view-rekap-tm-tu-per-bagian'])->group(function () {
+    Route::middleware(['permission:view-laporan,view-slip-gaji,view-rekap-upah-karyawan,view-rekap-uang-makan-transport,view-rekap-bank,view-rekap-upah-per-bagian,view-rekap-tm-tu-per-bagian,view-laporan-thr'])->group(function () {
         Route::middleware(['permission:view-laporan,view-slip-gaji'])->group(function () {
             Route::get('slip-gaji', [SlipGajiController::class, 'index'])->name('slip-gaji.index');
             Route::post('slip-gaji/preview', [SlipGajiController::class, 'preview'])->name('slip-gaji.preview');
             Route::get('slip-gaji/print/{periodeAwal}/{periodeAkhir}/{nik}/{periode}/{closingKe}', [SlipGajiController::class, 'print'])->name('slip-gaji.print');
+        });
+        Route::middleware(['permission:view-laporan,view-laporan-thr'])->group(function () {
+            Route::get('slip-thr', [SlipThrController::class, 'index'])->name('slip-thr.index');
+            Route::post('slip-thr/preview', [SlipThrController::class, 'preview'])->name('slip-thr.preview');
         });
         Route::middleware(['permission:view-laporan,view-rekap-upah-karyawan'])->group(function () {
             Route::get('rekap-upah-karyawan', [RekapUpahKaryawanController::class, 'index'])->name('rekap-upah-karyawan.index');
@@ -335,6 +410,11 @@ Route::middleware(['auth'])->group(function () {
             Route::post('rekap-bank/preview', [App\Http\Controllers\RekapBankController::class, 'preview'])->name('rekap-bank.preview');
             Route::post('rekap-bank/export-excel', [App\Http\Controllers\RekapBankController::class, 'exportExcel'])->name('rekap-bank.export-excel');
         });
+        Route::middleware(['permission:view-laporan,view-laporan-thr'])->group(function () {
+            Route::get('rekap-bank-thr', [App\Http\Controllers\RekapBankThrController::class, 'index'])->name('rekap-bank-thr.index');
+            Route::post('rekap-bank-thr/preview', [App\Http\Controllers\RekapBankThrController::class, 'preview'])->name('rekap-bank-thr.preview');
+            Route::post('rekap-bank-thr/export-excel', [App\Http\Controllers\RekapBankThrController::class, 'exportExcel'])->name('rekap-bank-thr.export-excel');
+        });
         Route::middleware(['permission:view-laporan,view-rekap-upah-per-bagian'])->group(function () {
             Route::get('rekap-upah-per-bagian-dept', [App\Http\Controllers\RekapUpahPerBagianDeptController::class, 'index'])->name('rekap-upah-per-bagian-dept.index');
             Route::post('rekap-upah-per-bagian-dept/preview', [App\Http\Controllers\RekapUpahPerBagianDeptController::class, 'preview'])->name('rekap-upah-per-bagian-dept.preview');
@@ -343,13 +423,23 @@ Route::middleware(['auth'])->group(function () {
             Route::get('rekap-uang-makan-transport-per-bagian-dept', [App\Http\Controllers\RekapUangMakanTransportPerBagianDeptController::class, 'index'])->name('rekap-uang-makan-transport-per-bagian-dept.index');
             Route::post('rekap-uang-makan-transport-per-bagian-dept/preview', [App\Http\Controllers\RekapUangMakanTransportPerBagianDeptController::class, 'preview'])->name('rekap-uang-makan-transport-per-bagian-dept.preview');
         });
+        Route::middleware(['permission:view-laporan,view-laporan-thr'])->group(function () {
+            Route::get('laporan-thr', [LaporanThrController::class, 'index'])->name('laporan-thr.index');
+            Route::post('laporan-thr/preview', [LaporanThrController::class, 'preview'])->name('laporan-thr.preview');
+            Route::get('laporan-thr-staff', [LaporanThrController::class, 'indexStaff'])->name('laporan-thr-staff.index');
+            Route::post('laporan-thr-staff/preview', [LaporanThrController::class, 'previewStaff'])->name('laporan-thr-staff.preview');
+        });
     });
 
     // Settings Routes (permission-based: group atau granular)
-    Route::middleware(['permission:view-settings,view-tarik-data-absensi,view-tarik-data-izin,view-tarik-data-tidak-masuk,view-tarik-data-hutang-piutang,view-logs,manage-users,manage-roles,manage-permissions'])->group(function () {
+    Route::middleware(['permission:view-settings,view-tarik-data-absensi,view-tarik-data-absensi-api,view-tarik-data-izin,view-tarik-data-tidak-masuk,view-list-pengajuan-cuti-api,view-list-pengajuan-izin-api,view-tarik-data-hutang-piutang,view-logs,view-login-activity,manage-users,manage-roles,manage-permissions'])->group(function () {
         Route::middleware(['permission:view-settings,view-tarik-data-absensi'])->group(function () {
             Route::get('tarik-data-absensi', [TarikDataAbsensiController::class, 'index'])->name('tarik-data-absensi.index');
             Route::post('tarik-data-absensi/pull', [TarikDataAbsensiController::class, 'pullData'])->name('tarik-data-absensi.pull');
+        });
+        Route::middleware(['permission:view-settings,view-tarik-data-absensi-api'])->group(function () {
+            Route::get('tarik-data-absensi-api', [TarikDataAbsensiApiController::class, 'index'])->name('tarik-data-absensi-api.index');
+            Route::post('tarik-data-absensi-api/pull', [TarikDataAbsensiApiController::class, 'pullData'])->name('tarik-data-absensi-api.pull');
         });
         Route::middleware(['permission:view-settings,view-tarik-data-izin'])->group(function () {
             Route::get('tarik-data-izin', [TarikDataIzinController::class, 'index'])->name('tarik-data-izin.index');
@@ -358,6 +448,14 @@ Route::middleware(['auth'])->group(function () {
         Route::middleware(['permission:view-settings,view-tarik-data-tidak-masuk'])->group(function () {
             Route::get('tarik-data-tidak-masuk', [TarikDataTidakMasukController::class, 'index'])->name('tarik-data-tidak-masuk.index');
             Route::post('tarik-data-tidak-masuk/pull', [TarikDataTidakMasukController::class, 'pullData'])->name('tarik-data-tidak-masuk.pull');
+        });
+        Route::middleware(['permission:view-settings,view-list-pengajuan-cuti-api'])->group(function () {
+            Route::get('list-pengajuan-cuti-api', [ListPengajuanCutiApiController::class, 'index'])->name('list-pengajuan-cuti-api.index');
+            Route::post('list-pengajuan-cuti-api/import', [ListPengajuanCutiApiController::class, 'import'])->name('list-pengajuan-cuti-api.import');
+        });
+        Route::middleware(['permission:view-settings,view-list-pengajuan-izin-api'])->group(function () {
+            Route::get('list-pengajuan-izin-api', [ListPengajuanIzinApiController::class, 'index'])->name('list-pengajuan-izin-api.index');
+            Route::post('list-pengajuan-izin-api/import', [ListPengajuanIzinApiController::class, 'import'])->name('list-pengajuan-izin-api.import');
         });
         Route::middleware(['permission:view-settings,view-tarik-data-hutang-piutang'])->group(function () {
             Route::get('tarik-data-hutang-piutang', [TarikDataHutangPiutangController::class, 'index'])->name('tarik-data-hutang-piutang.index');
@@ -380,6 +478,10 @@ Route::middleware(['auth'])->group(function () {
             Route::get('logs', [ActivityLogController::class, 'index'])->name('logs.index');
             Route::get('logs/{id}', [ActivityLogController::class, 'show'])->name('logs.show');
             Route::get('logs/export/csv', [ActivityLogController::class, 'export'])->name('logs.export');
+        });
+
+        Route::middleware(['permission:view-settings,view-login-activity'])->group(function () {
+            Route::get('login-activity', [UserLoginActivityController::class, 'index'])->name('login-activity.index');
         });
     });
 });

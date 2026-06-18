@@ -242,7 +242,7 @@
                     <th style="width: 5%;">PREMI</th>
                     <th style="width: 6%;">GAJI</th>
                     <th style="width: 4%;">TSM</th>
-                    <th colspan="3" style="width: 6%;">JAM LEMBUR</th>
+                    <th colspan="4" style="width: 8%;">JAM LEMBUR</th>
                     <th style="width: 5%;">SELISIH UPAH</th>
                     <th style="width: 6%;">UPAH LEMBUR</th>
                     <th style="width: 4%;">PERSEN LEMBUR (%)</th>
@@ -265,6 +265,7 @@
                     <th style="width: 2%;">JM1</th>
                     <th style="width: 2%;">JM2</th>
                     <th style="width: 2%;">JM3</th>
+                    <th style="width: 2%;">JM4</th>
                     <th></th>
                     <th></th>
                     <th></th>
@@ -291,7 +292,7 @@
                 <!-- Judul Departemen (muncul di awal departemen) -->
                 <tr class="bold" style="background-color: #e0e0e0;">
                     <td colspan="3"><strong>DEPARTEMEN: {{ $departemen['nama'] }}</strong></td>
-                    <td colspan="17"></td>
+                    <td colspan="18"></td>
                 </tr>
 
                 @foreach($departemen['bagians'] as $bagianKode => $bagian)
@@ -302,7 +303,7 @@
                 <!-- Bagian Header -->
                 <tr class="bold">
                     <td colspan="3" class="indent-1"><strong>Bagian {{ $bagian['nama'] }}</strong></td>
-                    <td colspan="17"></td>
+                    <td colspan="18"></td>
                 </tr>
 
                 <!-- Karyawan dalam Bagian -->
@@ -313,7 +314,9 @@
                 $currentRow++;
 
                 $karyawan = $closing->karyawan;
-                $upahLembur = ($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0);
+                $upahLembur = ($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0) + ($closing->decTotallembur4 ?? 0);
+                $jamLibur4x = max(0, (float)($closing->decJamLemburLibur3 ?? 0) - 1);
+                $jamJ4 = (float)($closing->decJamLemburKerja4 ?? 0) + $jamLibur4x;
 
                 // General Total = Premi + Gaji + Selisih Upah + Upah Lembur
                 $generalTotal = ($closing->decPremi ?? 0) +
@@ -346,6 +349,7 @@
                     <td class="text-right">{{ number_format($closing->decJamLemburKerja1 ?? 0, 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format(($closing->decJamLemburKerja2 ?? 0) + ($closing->decJamLemburLibur2 ?? 0), 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format(($closing->decJamLemburKerja3 ?? 0) + ($closing->decJamLemburLibur3 ?? 0), 1, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($jamJ4, 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($closing->decRapel ?? 0, 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($upahLembur, 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($persenLembur, 2, ',', '.') }}</td>
@@ -375,6 +379,7 @@
                     <td class="text-right">{{ number_format($bagianTotal['jam_lembur_jm1'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($bagianTotal['jam_lembur_jm2'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($bagianTotal['jam_lembur_jm3'], 1, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($bagianTotal['jam_lembur_jm4'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($bagianTotal['selisih_upah'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($bagianTotal['upah_lembur'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($bagianPersenLembur, 2, ',', '.') }}</td>
@@ -404,6 +409,7 @@
                     <td class="text-right">{{ number_format($deptTotal['jam_lembur_jm1'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($deptTotal['jam_lembur_jm2'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($deptTotal['jam_lembur_jm3'], 1, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($deptTotal['jam_lembur_jm4'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($deptTotal['selisih_upah'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($deptTotal['upah_lembur'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($deptPersenLembur, 2, ',', '.') }}</td>
@@ -433,6 +439,7 @@
                     <td class="text-right">{{ number_format($divisiTotal['jam_lembur_jm1'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($divisiTotal['jam_lembur_jm2'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($divisiTotal['jam_lembur_jm3'], 1, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($divisiTotal['jam_lembur_jm4'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($divisiTotal['selisih_upah'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($divisiTotal['upah_lembur'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($divisiPersenLembur, 2, ',', '.') }}</td>
@@ -466,6 +473,7 @@
                     <td class="text-right">{{ number_format($grandTotal['jam_lembur_jm1'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['jam_lembur_jm2'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['jam_lembur_jm3'], 1, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($grandTotal['jam_lembur_jm4'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['selisih_upah'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['upah_lembur'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandPersenLembur, 2, ',', '.') }}</td>

@@ -20,14 +20,16 @@ class RekapBankExport implements FromCollection, WithHeadings, WithStyles, WithC
     protected $closings;
     protected $tanggalAwal;
     protected $tanggalAkhir;
+    protected $tanggalPeriode;
     protected $namaDivisi;
     protected $kodeDivisi;
 
-    public function __construct($closings, $tanggalAwal, $tanggalAkhir, $namaDivisi, $kodeDivisi)
+    public function __construct($closings, $tanggalAwal, $tanggalAkhir, $tanggalPeriode, $namaDivisi, $kodeDivisi)
     {
         $this->closings = $closings;
         $this->tanggalAwal = $tanggalAwal;
         $this->tanggalAkhir = $tanggalAkhir;
+        $this->tanggalPeriode = $tanggalPeriode;
         $this->namaDivisi = $namaDivisi;
         $this->kodeDivisi = $kodeDivisi;
     }
@@ -49,8 +51,9 @@ class RekapBankExport implements FromCollection, WithHeadings, WithStyles, WithC
                 ($closing->decUangMakan ?? 0) +
                 ($closing->decTransport ?? 0) +
                 ($closing->decPremi ?? 0) +
-                (($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0)) +
-                ($closing->decRapel ?? 0);
+                (($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0) + ($closing->decTotallembur4 ?? 0)) +
+                ($closing->decRapel ?? 0) +
+                ($closing->decTunjanganJabatan ?? 0);
 
             // Hitung Pot Lain-lain = decPotonganLain + decPotonganAbsen + decPotonganHC
             $potLainLain = ($closing->decPotonganLain ?? 0) +
@@ -130,8 +133,9 @@ class RekapBankExport implements FromCollection, WithHeadings, WithStyles, WithC
                 ($closing->decUangMakan ?? 0) +
                 ($closing->decTransport ?? 0) +
                 ($closing->decPremi ?? 0) +
-                (($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0)) +
-                ($closing->decRapel ?? 0);
+                (($closing->decTotallembur1 ?? 0) + ($closing->decTotallembur2 ?? 0) + ($closing->decTotallembur3 ?? 0) + ($closing->decTotallembur4 ?? 0)) +
+                ($closing->decRapel ?? 0) +
+                ($closing->decTunjanganJabatan ?? 0);
 
             $potLainLain = ($closing->decPotonganLain ?? 0) +
                 ($closing->decPotonganAbsen ?? 0) +
@@ -311,7 +315,7 @@ class RekapBankExport implements FromCollection, WithHeadings, WithStyles, WithC
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                 ]);
 
-                $sheet->setCellValue('A2', 'Periode: ' . Carbon::parse($this->tanggalAwal)->format('d F Y'));
+                $sheet->setCellValue('A2', 'Periode: ' . Carbon::parse($this->tanggalPeriode)->format('d F Y'));
                 $sheet->mergeCells('A2:Y2');
                 $sheet->getStyle('A2')->applyFromArray([
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],

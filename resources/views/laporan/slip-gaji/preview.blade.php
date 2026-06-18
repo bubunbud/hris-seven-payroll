@@ -35,9 +35,12 @@
                 // Ambil nama divisi dari closing->divisi atau karyawan->divisi
                 $namaDivisi = $closing->divisi->vcNamaDivisi ?? $closing->karyawan->divisi->vcNamaDivisi ?? $closing->vcKodeDivisi;
 
+                $jamLibur4x = max(0, (float)($closing->decJamLemburLibur3 ?? 0) - 1);
+                $jamJ4 = (float)($closing->decJamLemburKerja4 ?? 0) + $jamLibur4x;
+
                 $jumlahBersih = $closing->decGapok + $closing->decUangMakan + $closing->decTransport +
-                $closing->decTotallembur1 + $closing->decTotallembur2 + $closing->decTotallembur3 +
-                $closing->decPremi + $closing->decRapel;
+                $closing->decTotallembur1 + $closing->decTotallembur2 + $closing->decTotallembur3 + (float)($closing->decTotallembur4 ?? 0) +
+                $closing->decPremi + $closing->decRapel + (float)($closing->decTunjanganJabatan ?? 0);
                 $jumlahPotongan = $closing->decPotonganBPJSKes + $closing->decPotonganBPJSJHT +
                 $closing->decPotonganBPJSJP + $closing->decIuranSPN +
                 $closing->decPotonganKoperasi + $closing->decPotonganBPR +
@@ -46,13 +49,13 @@
                 @endphp
                 <div class="col-md-6 col-lg-3 mb-3 slip-container">
                     <div class="card slip-gaji-card" style="border: 2px solid #000; height: 100%;">
-                        <div class="card-body p-2" style="font-size: 0.7rem; padding: 6px !important;">
+                        <div class="card-body p-2" style="font-size: 0.8rem; padding: 6px !important;">
                             <!-- Header Divisi -->
                             <div class="text-center mb-1" style="line-height: 1.3;">
-                                <h6 class="mb-1" style="font-size: 0.75rem;"><strong>{{ $namaDivisi }}</strong></h6>
-                                <p class="mb-1" style="font-size: 0.55rem;">Jl. Tembokan RT 01/01 Cipeundeuy - Padalarang</p>
-                                <p class="mb-1" style="font-size: 0.65rem;"><strong>{{ \Carbon\Carbon::parse($closing->periode)->format('d F Y') }}</strong></p>
-                                <p class="mb-1" style="font-size: 0.5rem;">
+                                <h6 class="mb-1" style="font-size: 0.85rem;"><strong>{{ $namaDivisi }}</strong></h6>
+                                <p class="mb-1" style="font-size: 0.65rem;">Jl. Tembokan RT 01/01 Cipeundeuy - Padalarang</p>
+                                <p class="mb-1" style="font-size: 0.75rem;"><strong>{{ \Carbon\Carbon::parse($closing->periode)->format('d F Y') }}</strong></p>
+                                <p class="mb-1" style="font-size: 0.6rem;">
                                     {{ \Carbon\Carbon::parse($closing->vcPeriodeAwal)->format('d/m/Y') }} - {{ \Carbon\Carbon::parse($closing->vcPeriodeAkhir)->format('d/m/Y') }}
                                 </p>
                             </div>
@@ -77,7 +80,7 @@
 
                             <!-- Group Penerimaan -->
                             <div class="mb-1" style="line-height: 1.3; margin-top: 4px;">
-                                <strong style="font-size: 0.7rem;">PENERIMAAN</strong>
+                                <strong style="font-size: 0.8rem;">PENERIMAAN</strong>
                             </div>
 
                             <!-- Earnings -->
@@ -91,21 +94,19 @@
                                 <div class="col-6 text-end">{{ $closing->intHadir }} / {{ $closing->intJumlahHari }}</div>
                             </div>
 
-                            @if($closing->intKHL > 0)
                             <div class="row mb-1" style="line-height: 1.4;">
                                 <div class="col-6">KHL:</div>
                                 <div class="col-6 text-end">{{ $closing->intKHL }}</div>
                             </div>
-                            @endif
 
                             <div class="row mb-1" style="line-height: 1.4;">
                                 <div class="col-6">Makan:</div>
-                                <div class="col-6 text-end">{{ $closing->intMakan }}x Rp. {{ number_format($closing->decUangMakan, 0, ',', '.') }}</div>
+                                <div class="col-6 text-end">{{ $closing->intMakan }} x {{ number_format($closing->decVarMakan ?? 0, 0, ',', '.') }} = Rp. {{ number_format($closing->decUangMakan, 0, ',', '.') }}</div>
                             </div>
 
                             <div class="row mb-1" style="line-height: 1.4;">
                                 <div class="col-6">Transport:</div>
-                                <div class="col-6 text-end">{{ $closing->intTransport }}x Rp. {{ number_format($closing->decTransport, 0, ',', '.') }}</div>
+                                <div class="col-6 text-end">{{ $closing->intTransport }} x {{ number_format($closing->decVarTransport ?? 0, 0, ',', '.') }} = Rp. {{ number_format($closing->decTransport, 0, ',', '.') }}</div>
                             </div>
 
                             @if($closing->decTotallembur1 > 0)
@@ -129,6 +130,13 @@
                             </div>
                             @endif
 
+                            @if(($closing->decTotallembur4 ?? 0) > 0)
+                            <div class="row mb-1" style="line-height: 1.4;">
+                                <div class="col-6">Lembur J4:</div>
+                                <div class="col-6 text-end">{{ number_format($jamJ4, 1) }}j (Rp. {{ number_format($closing->decTotallembur4, 0, ',', '.') }})</div>
+                            </div>
+                            @endif
+
                             @if($closing->decPremi > 0)
                             <div class="row mb-1" style="line-height: 1.4;">
                                 <div class="col-6">Premi:</div>
@@ -138,8 +146,15 @@
 
                             @if($closing->decRapel > 0)
                             <div class="row mb-1" style="line-height: 1.4;">
-                                <div class="col-6">Rapel:</div>
+                                <div class="col-6">Selisih Upah:</div>
                                 <div class="col-6 text-end">Rp. {{ number_format($closing->decRapel, 0, ',', '.') }}</div>
+                            </div>
+                            @endif
+
+                            @if(($closing->decTunjanganJabatan ?? 0) > 0)
+                            <div class="row mb-1" style="line-height: 1.4;">
+                                <div class="col-6">Tunj. Jabatan:</div>
+                                <div class="col-6 text-end">Rp. {{ number_format($closing->decTunjanganJabatan, 0, ',', '.') }}</div>
                             </div>
                             @endif
 
@@ -153,7 +168,7 @@
 
                             <!-- Group Potongan -->
                             <div class="mb-1" style="line-height: 1.3; margin-top: 4px;">
-                                <strong style="font-size: 0.7rem;">POTONGAN</strong>
+                                <strong style="font-size: 0.8rem;">POTONGAN</strong>
                             </div>
 
                             <!-- Potongan -->
@@ -229,7 +244,7 @@
                             </div>
 
                             <!-- Absensi Periode 1 dan 2 - Dipindah ke paling bawah -->
-                            <div class="row mt-1" style="border-top: 1px solid #ddd; padding-top: 3px; font-size: 0.55rem; line-height: 1.3; margin-top: 4px;">
+                            <div class="row mt-1" style="border-top: 1px solid #ddd; padding-top: 3px; font-size: 0.65rem; line-height: 1.3; margin-top: 4px;">
                                 <div class="col-12">
                                     <strong>Absensi:</strong>
                                     @if($closing->vcClosingKe == '1')
@@ -244,7 +259,7 @@
                             </div>
 
                             <!-- Footer - Penerima dipindah ke paling bawah setelah absensi -->
-                            <div class="text-center mt-1" style="border-top: 1px solid #ddd; padding-top: 3px; font-size: 0.55rem; margin-top: 4px;">
+                            <div class="text-center mt-1" style="border-top: 1px solid #ddd; padding-top: 3px; font-size: 0.65rem; margin-top: 4px;">
                                 <small><strong>Penerima:</strong> <u>{{ $closing->karyawan->Nama ?? 'N/A' }}</u></small>
                             </div>
                         </div>

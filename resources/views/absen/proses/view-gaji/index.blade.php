@@ -83,9 +83,13 @@
                         @php
                         $record = $item['record'];
                         $periodeSebelumnya = $item['periode_sebelumnya'] ?? null;
+                        $jamLibur4x = max(0, (float)($record->decJamLemburLibur3 ?? 0) - 1);
+                        $jamJ4 = (float)($record->decJamLemburKerja4 ?? 0) + $jamLibur4x;
+                        $nominalJ4 = (float)($record->decTotallembur4 ?? 0);
+                        $totalNominalLembur = (float)($record->decTotallembur1 ?? 0) + (float)($record->decTotallembur2 ?? 0) + (float)($record->decTotallembur3 ?? 0) + $nominalJ4;
                         $totalPenerimaan = $record->decGapok + $record->decUangMakan + $record->decTransport +
-                        $record->decPremi + $record->decTotallembur1 + $record->decTotallembur2 +
-                        $record->decTotallembur3 + $record->decRapel;
+                        $record->decPremi + $totalNominalLembur +
+                        $record->decRapel + (float)($record->decTunjanganJabatan ?? 0);
                         $totalPotongan = $record->decPotonganBPJSKes + $record->decPotonganBPJSJHT +
                         $record->decPotonganBPJSJP + $record->decIuranSPN +
                         $record->decPotonganKoperasi + $record->decPotonganBPR +
@@ -166,18 +170,18 @@
                                     K: {{ number_format($record->decJamLemburKerja, 1) }} |
                                     L: {{ number_format($record->decJamLemburLibur, 1) }}
                                 </small>
-                                @if($record->decJamLemburKerja1 > 0 || $record->decJamLemburKerja2 > 0 || $record->decJamLemburKerja3 > 0 || $record->decJamLemburLibur2 > 0 || $record->decJamLemburLibur3 > 0)
+                                @if($record->decJamLemburKerja1 > 0 || $record->decJamLemburKerja2 > 0 || $record->decJamLemburKerja3 > 0 || ($record->decJamLemburKerja4 ?? 0) > 0 || $record->decJamLemburLibur2 > 0 || $record->decJamLemburLibur3 > 0)
                                 <div class="mt-1">
                                     <small>
                                         J1: {{ number_format($record->decJamLemburKerja1, 1) }} |
                                         J2: {{ number_format($record->decJamLemburKerja2 + $record->decJamLemburLibur2, 1) }} |
-                                        J3: {{ number_format($record->decJamLemburKerja3 + $record->decJamLemburLibur3, 1) }}
+                                        J3: {{ number_format($record->decJamLemburKerja3 + min(1, (float)($record->decJamLemburLibur3 ?? 0)), 1) }}@if($jamJ4 > 0) | J4: {{ number_format($jamJ4, 1) }}@endif
                                     </small>
                                 </div>
                                 @endif
                                 <div class="mt-1">
                                     <small class="text-success">
-                                        Rp. {{ number_format($record->decTotallembur1 + $record->decTotallembur2 + $record->decTotallembur3, 0, ',', '.') }}
+                                        Total lembur: Rp. {{ number_format($totalNominalLembur, 0, ',', '.') }}
                                     </small>
                                 </div>
                             </td>
@@ -201,7 +205,7 @@
                                         <span>Rp. {{ number_format($record->decPremi ?? 0, 0, ',', '.') }}</span>
                                     </div>
                                     @endif
-                                    @if($record->decTotallembur1 + $record->decTotallembur2 + $record->decTotallembur3 > 0)
+                                    @if($totalNominalLembur > 0)
                                     @if($record->decTotallembur1 > 0)
                                     <div style="display: flex; justify-content: space-between; gap: 8px; padding-left: 12px;">
                                         <span><small>Lembur J1:</small></span>
@@ -220,15 +224,27 @@
                                         <span style="margin-left: -35px;"><small>Rp. {{ number_format($record->decTotallembur3, 0, ',', '.') }}</small></span>
                                     </div>
                                     @endif
+                                    @if($nominalJ4 > 0)
+                                    <div style="display: flex; justify-content: space-between; gap: 8px; padding-left: 12px;">
+                                        <span><small>Lembur J4:</small></span>
+                                        <span style="margin-left: -35px;"><small>Rp. {{ number_format($nominalJ4, 0, ',', '.') }}</small></span>
+                                    </div>
+                                    @endif
                                     <div style="display: flex; justify-content: space-between; gap: 8px; margin-top: 2px;">
                                         <span>Lembur Total:</span>
-                                        <span>Rp. {{ number_format($record->decTotallembur1 + $record->decTotallembur2 + $record->decTotallembur3, 0, ',', '.') }}</span>
+                                        <span>Rp. {{ number_format($totalNominalLembur, 0, ',', '.') }}</span>
                                     </div>
                                     @endif
                                     @if($record->decRapel > 0)
                                     <div style="display: flex; justify-content: space-between; gap: 8px;">
                                         <span>Rapel:</span>
                                         <span>Rp. {{ number_format($record->decRapel, 0, ',', '.') }}</span>
+                                    </div>
+                                    @endif
+                                    @if(($record->decTunjanganJabatan ?? 0) > 0)
+                                    <div style="display: flex; justify-content: space-between; gap: 8px;">
+                                        <span>Tunj. Jabatan:</span>
+                                        <span>Rp. {{ number_format($record->decTunjanganJabatan, 0, ',', '.') }}</span>
                                     </div>
                                     @endif
                                 </div>
@@ -314,7 +330,7 @@
                         </tr>
                         @empty
                         <tr>
-                            <td colspan="13" class="text-center py-4">
+                            <td colspan="14" class="text-center py-4">
                                 <i class="fas fa-inbox fa-2x text-muted mb-2 d-block"></i>
                                 <span class="text-muted">Tidak ada data gaji yang ditemukan</span>
                             </td>

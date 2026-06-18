@@ -33,9 +33,19 @@
                                 <input type="date" class="form-control" id="sampai_tanggal" name="sampai_tanggal" value="{{ $endDate }}">
                             </div>
                             <div class="col-md-2">
-                                <label for="nik" class="form-label">NIK</label>
-                                <input type="text" class="form-control" id="nik" name="nik" value="{{ $nik }}" placeholder="Cari NIK">
-                                @if($nik && $selectedNama)
+                                <label for="search" class="form-label">NIK / Nama</label>
+                                <div class="position-relative">
+                                    <input type="text"
+                                        class="form-control"
+                                        id="search"
+                                        name="search"
+                                        value="{{ $search ?? '' }}"
+                                        placeholder="Cari NIK atau Nama (pisahkan dengan koma)"
+                                        autocomplete="off">
+                                    <div id="searchAutocomplete" class="autocomplete-dropdown" style="display: none;"></div>
+                                </div>
+                                <small class="text-muted">Ketik NIK atau nama karyawan untuk mencari (bisa multiple, pisahkan dengan koma)</small>
+                                @if($search && $selectedNama)
                                 <div class="form-text">Nama: {{ $selectedNama }}</div>
                                 @endif
                             </div>
@@ -48,7 +58,8 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-md-2 d-flex align-items-center">
+                            <div class="col-md-2">
+                                <label class="form-label">&nbsp;</label>
                                 <button type="submit" class="btn btn-primary w-100 shadow-sm">
                                     <i class="fas fa-eye me-2"></i>Preview
                                 </button>
@@ -67,8 +78,27 @@
                 <div class="col-md-3">
                     <div class="card shadow-sm h-100">
                         <div class="card-body">
+                            <div class="text-muted small">Jumlah Hari Kerja Umum</div>
+                            <div class="display-6 fw-bold">{{ number_format($totalHariKerja) }}</div>
+                            <div class="small text-muted">Selain sabtu, minggu, dan hari libur</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="text-muted small">Jumlah Hari Kerja Karyawan</div>
+                            <div class="display-6 fw-bold">{{ number_format($totalJHK) }}</div>
+                            <div class="small text-muted">Total JHK sesuai Tgl Masuk</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
                             <div class="text-muted small">Kehadiran (Aktual)</div>
                             <div class="display-6 fw-bold">{{ number_format($hadir) }}</div>
+                            <div class="small text-muted">Persentase: <strong>{{ number_format($persentaseKehadiranAktual, 2) }}%</strong></div>
                         </div>
                     </div>
                 </div>
@@ -77,19 +107,14 @@
                         <div class="card-body">
                             <div class="text-muted small">Kehadiran (Kebijakan)</div>
                             <div class="display-6 fw-bold">{{ number_format($hadirKebijakan) }}</div>
+                            <div class="small text-muted">Persentase: <strong>{{ number_format($persentaseKehadiranKebijakan, 2) }}%</strong></div>
                             <div class="small text-muted">Termasuk ketidakhadiran dibayar</div>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-body">
-                            <div class="text-muted small">Jam Izin Keluar (total)</div>
-                            <div class="display-6 fw-bold">{{ number_format($totalJamIzinKeluar,2) }}</div>
-                            <div class="small text-muted">Rata-rata: {{ number_format($rataJamIzinKeluar,2) }} jam/karyawan</div>
-                        </div>
-                    </div>
-                </div>
+            </div>
+
+            <div class="row g-3 mt-1">
                 <div class="col-md-3">
                     <div class="card shadow-sm h-100">
                         <div class="card-body">
@@ -99,42 +124,71 @@
                         </div>
                     </div>
                 </div>
+                <div class="col-md-3">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="text-muted small">Jumlah Jam Izin Keluar Komplek</div>
+                            <div class="display-6 fw-bold">{{ number_format($totalJamIzinKeluarKomplek,2) }}</div>
+                            <div class="small text-muted">Total jam izin keluar komplek (IB)</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="text-muted small">Jumlah Jam Izin Pulang Cepat</div>
+                            <div class="display-6 fw-bold">{{ number_format($totalJamIzinPulangCepat,2) }}</div>
+                            <div class="small text-muted">Total jam izin pulang cepat (PC)</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card shadow-sm h-100 {{ $totalJamIzinKeluar != 0 ? 'border-danger' : '' }}">
+                        <div class="card-body">
+                            <div class="text-muted small">Jam Izin Keluar (total)</div>
+                            <div class="display-6 fw-bold {{ $totalJamIzinKeluar != 0 ? 'text-danger' : '' }}">{{ number_format($totalJamIzinKeluar,2) }}</div>
+                            <div class="small text-muted">Rata-rata: {{ number_format($rataJamIzinKeluar,2) }} jam/karyawan</div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="row g-3 mt-1">
                 <div class="col-md-3">
-                    <div class="card shadow-sm h-100 border-primary">
+                    <div class="card shadow-sm h-100">
                         <div class="card-body">
-                            <div class="text-muted small">Total Jam Standar Kerja</div>
-                            <div class="display-6 fw-bold text-primary">{{ number_format($totalJamStandarKerja, 2) }}</div>
-                            <div class="small text-muted">Akumulasi jam shift standar periode</div>
+                            <div class="text-muted small">Total Jam Standar Kerja (Hari Kerja Umum)</div>
+                            <div class="display-6 fw-bold">{{ number_format($totalJamStandarKerjaUmum, 2) }}</div>
+                            <div class="small text-muted">Berdasarkan Jumlah Hari Kerja Umum</div>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card shadow-sm h-100 border-info">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="text-muted small">Total Jam Standar Kerja (Hari Kerja Karyawan)</div>
+                            <div class="display-6 fw-bold">{{ number_format($totalJamStandarKerjaKaryawan, 2) }}</div>
+                            <div class="small text-muted">Berdasarkan Jumlah Hari Kerja Karyawan</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card shadow-sm h-100">
                         <div class="card-body">
                             <div class="text-muted small">Total Jam Kerja Aktual</div>
-                            <div class="display-6 fw-bold text-info">{{ number_format($totalJamKerjaAktual, 2) }}</div>
-                            <div class="small text-muted">Akumulasi jam kerja karyawan periode</div>
+                            <div class="display-6 fw-bold">{{ number_format($totalJamKerjaAktual, 2) }}</div>
+                            <div class="small text-muted">Berdasarkan Kehadiran (Aktual)</div>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card shadow-sm h-100 border-success">
+                    <div class="card shadow-sm h-100 {{ $surplusDefisitJamKerja >= 0 ? 'border-success' : 'border-danger' }}">
                         <div class="card-body">
-                            <div class="text-muted small">Surplus Absensi</div>
-                            <div class="display-6 fw-bold text-success">{{ number_format($totalSurplusJam, 2) }}</div>
-                            <div class="small text-muted">Akumulasi jam kerja melebihi jam shift standar</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="card shadow-sm h-100 border-danger">
-                        <div class="card-body">
-                            <div class="text-muted small">Defisit Absensi</div>
-                            <div class="display-6 fw-bold text-danger">{{ number_format($totalDefisitJam, 2) }}</div>
-                            <div class="small text-muted">Akumulasi jam kerja kurang dari jam shift standar</div>
+                            <div class="text-muted small">Surplus/Defisit Jam Kerja</div>
+                            <div class="display-6 fw-bold {{ $surplusDefisitJamKerja >= 0 ? 'text-success' : 'text-danger' }}">
+                                {{ $surplusDefisitJamKerja >= 0 ? '+' : '' }}{{ number_format($surplusDefisitJamKerja, 2) }}
+                            </div>
+                            <div class="small text-muted">Total Jam Kerja Aktual - Total Jam Standar Kerja (Hari Kerja Karyawan)</div>
                         </div>
                     </div>
                 </div>
@@ -155,16 +209,19 @@
                                             <th class="small fw-normal" style="font-size: 0.85rem;">No</th>
                                             <th class="small fw-normal" style="font-size: 0.85rem;">NIK</th>
                                             <th class="small fw-normal" style="font-size: 0.85rem;">Nama</th>
-                                            <th class="small fw-normal" style="font-size: 0.85rem;">Hari Kerja</th>
-                                            <th class="small fw-normal" style="font-size: 0.85rem;">Hadir</th>
-                                            <th class="small fw-normal" style="font-size: 0.85rem;">Izin Resmi (I001)</th>
-                                            <th class="small fw-normal" style="font-size: 0.85rem;">Izin Pribadi (I002)</th>
-                                            <th class="small fw-normal" style="font-size: 0.85rem;">Sakit (S010)</th>
-                                            <th class="small fw-normal" style="font-size: 0.85rem;">Cuti (C010)</th>
-                                            <th class="small fw-normal" style="font-size: 0.85rem;">Telat</th>
-                                            <th class="small fw-normal" style="font-size: 0.85rem;">Masuk Siang</th>
-                                            <th class="small fw-normal" style="font-size: 0.85rem;">Pulang Cepat</th>
-                                            <th class="small fw-normal" style="font-size: 0.85rem;">Izin Keluar (jam)</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Tanggal Masuk</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Hari Kerja</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Hadir</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Cuti</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Sakit</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Izin Pribadi</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Izin Resmi</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Izin Organisasi</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Telat</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Masuk Siang</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Keluar Komplek</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Pulang Cepat</th>
+                                            <th class="small fw-normal text-center" style="font-size: 0.85rem;">Izin Keluar (jam)</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -173,20 +230,23 @@
                                             <td class="text-center">{{ $i+1 }}</td>
                                             <td><strong>{{ $row['nik'] }}</strong></td>
                                             <td>{{ $row['nama'] }}</td>
+                                            <td class="text-center">{{ $row['tglMasuk'] ? \Carbon\Carbon::parse($row['tglMasuk'])->format('d/m/Y') : '-' }}</td>
                                             <td class="text-center">{{ $row['hariKerja'] }}</td>
                                             <td class="text-center">{{ $row['hadir'] }}</td>
-                                            <td class="text-center">{{ $row['izinResmi'] }}</td>
-                                            <td class="text-center">{{ $row['izinPribadi'] }}</td>
-                                            <td class="text-center">{{ $row['sakitSurat'] }}</td>
                                             <td class="text-center">{{ $row['cutiTahunan'] }}</td>
+                                            <td class="text-center">{{ $row['sakitSurat'] }}</td>
+                                            <td class="text-center">{{ $row['izinPribadi'] }}</td>
+                                            <td class="text-center">{{ $row['izinResmi'] }}</td>
+                                            <td class="text-center">{{ $row['izinOrganisasi'] }}</td>
                                             <td class="text-center">{{ $row['telat'] }}</td>
                                             <td class="text-center">{{ $row['masukSiang'] }}</td>
+                                            <td class="text-center">{{ $row['keluarKomplek'] }}</td>
                                             <td class="text-center">{{ $row['pulangCepat'] }}</td>
                                             <td class="text-center">{{ number_format($row['izinKeluarJam'],2) }}</td>
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="13" class="text-center text-muted">Tidak ada data</td>
+                                            <td colspan="16" class="text-center text-muted">Tidak ada data</td>
                                         </tr>
                                         @endforelse
                                     </tbody>
@@ -449,7 +509,156 @@
             });
         }
     })();
+
+    // Autocomplete functionality
+    let searchTimeout;
+    let selectedIndex = -1;
+    const searchInput = document.getElementById('search');
+    const autocompleteDiv = document.getElementById('searchAutocomplete');
+    const karyawanList = @json($karyawanList ?? []);
+
+    function getCurrentSearchTerms() {
+        const value = searchInput ? searchInput.value.trim() : '';
+        if (!value) return [];
+        return value.split(',').map(term => term.trim()).filter(term => term.length > 0);
+    }
+
+    function getCurrentTypingTerm() {
+        const value = searchInput ? searchInput.value.trim() : '';
+        if (!value) return '';
+        const terms = value.split(',');
+        return terms[terms.length - 1].trim();
+    }
+
+    if (searchInput && autocompleteDiv) {
+        searchInput.addEventListener('input', function() {
+            const currentTerm = getCurrentTypingTerm().toLowerCase();
+            clearTimeout(searchTimeout);
+            if (currentTerm.length === 0) {
+                autocompleteDiv.style.display = 'none';
+                selectedIndex = -1;
+                return;
+            }
+            if (currentTerm.length < 2) {
+                autocompleteDiv.style.display = 'none';
+                return;
+            }
+            searchTimeout = setTimeout(() => {
+                const results = karyawanList.filter(k => k.search.includes(currentTerm)).slice(0, 20);
+                displayAutocomplete(results);
+            }, 200);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            const items = autocompleteDiv.querySelectorAll('.autocomplete-item');
+            if (items.length === 0) return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                updateSelectedItem(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                updateSelectedItem(items);
+            } else if (e.key === 'Enter' && selectedIndex >= 0) {
+                e.preventDefault();
+                items[selectedIndex].click();
+            }
+        });
+    }
+
+    function displayAutocomplete(karyawans) {
+        if (!autocompleteDiv) return;
+        if (!karyawans || karyawans.length === 0) {
+            autocompleteDiv.innerHTML = '<div class="autocomplete-item">Tidak ada karyawan ditemukan</div>';
+            autocompleteDiv.style.display = 'block';
+            return;
+        }
+        autocompleteDiv.innerHTML = '';
+        karyawans.forEach((karyawan, index) => {
+            if (!karyawan || !karyawan.nik) return;
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.innerHTML = `
+                <strong>${karyawan.nik || ''}</strong> - ${karyawan.nama || ''}
+                <small>Divisi: ${karyawan.divisi || '-'} | Bagian: ${karyawan.bagian || '-'}</small>
+            `;
+            item.addEventListener('click', function() {
+                selectKaryawan(karyawan);
+            });
+            autocompleteDiv.appendChild(item);
+        });
+        autocompleteDiv.style.display = 'block';
+        selectedIndex = -1;
+    }
+
+    function selectKaryawan(karyawan) {
+        if (!searchInput) return;
+        const currentTerms = getCurrentSearchTerms();
+        currentTerms.pop();
+        const newTerm = `${karyawan.nik} - ${karyawan.nama}`;
+        currentTerms.push(newTerm);
+        searchInput.value = currentTerms.join(', ');
+        if (autocompleteDiv) {
+            autocompleteDiv.style.display = 'none';
+        }
+        selectedIndex = -1;
+        searchInput.focus();
+    }
+
+    document.addEventListener('click', function(e) {
+        if (searchInput && autocompleteDiv && !searchInput.contains(e.target) && !autocompleteDiv.contains(e.target)) {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        }
+    });
+
+    function updateSelectedItem(items) {
+        items.forEach((item, index) => {
+            item.classList.toggle('active', index === selectedIndex);
+        });
+    }
 </script>
+@endpush
+
+@push('styles')
+<style>
+    .autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ced4da;
+        border-radius: 0.375rem;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        margin-top: 2px;
+    }
+    .autocomplete-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.2s;
+    }
+    .autocomplete-item:hover,
+    .autocomplete-item.active {
+        background-color: #f8f9fa;
+    }
+    .autocomplete-item:last-child {
+        border-bottom: none;
+    }
+    .autocomplete-item strong {
+        color: #0d6efd;
+    }
+    .autocomplete-item small {
+        color: #6c757d;
+        display: block;
+        margin-top: 0.25rem;
+    }
+</style>
 @endpush
 
 

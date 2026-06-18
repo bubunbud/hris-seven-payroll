@@ -177,6 +177,7 @@ class ActivityLogService
 
     /**
      * Get loggable attributes (exclude sensitive fields)
+     * Sanitizes values to valid UTF-8 to prevent JSON encoding errors
      */
     protected static function getLoggableAttributes($attributes)
     {
@@ -184,7 +185,27 @@ class ActivityLogService
             return null;
         }
 
-        return array_diff_key($attributes, array_flip(self::$excludedFields));
+        $filtered = array_diff_key($attributes, array_flip(self::$excludedFields));
+        return self::sanitizeForJson($filtered);
+    }
+
+    /**
+     * Recursively sanitize values to valid UTF-8 for JSON encoding
+     * Fixes "Malformed UTF-8 characters" error when logging data from DB with wrong encoding
+     */
+    protected static function sanitizeForJson($value)
+    {
+        if (is_array($value)) {
+            return array_map([self::class, 'sanitizeForJson'], $value);
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+        if (is_string($value)) {
+            $sanitized = @mb_convert_encoding($value, 'UTF-8', 'UTF-8');
+            return $sanitized !== false ? $sanitized : preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value);
+        }
+        return $value;
     }
 
     /**

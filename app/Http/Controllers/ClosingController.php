@@ -15,6 +15,7 @@ use App\Models\HutangPiutang;
 use App\Models\LemburHeader;
 use App\Models\LemburDetail;
 use App\Traits\HariKerjaHelper;
+use App\Traits\TidakMasukOverlapHelper;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +23,7 @@ use Illuminate\Support\Facades\Log;
 
 class ClosingController extends Controller
 {
-    use HariKerjaHelper;
+    use HariKerjaHelper, TidakMasukOverlapHelper;
     /**
      * Display the closing gaji form
      */
@@ -39,29 +40,38 @@ class ClosingController extends Controller
         // Ambil periode sebelumnya untuk setiap periode yang ada
         $periodesWithPrevious = [];
         foreach ($periodes as $periode) {
-            // Cari periode sebelumnya (periode yang sama tapi closing berbeda, atau periode sebelumnya)
-            $periodeSebelumnya = PeriodeGaji::where('vcKodeDivisi', $periode->vcKodeDivisi)
-                ->where(function ($q) use ($periode) {
-                    // Jika periode closing 2, cari periode closing 1 dengan periode yang sama
-                    if ($periode->vcQuarter == '2') {
-                        $q->where('periode', $periode->periode)
-                            ->where('vcQuarter', '1');
-                    } else {
-                        // Jika periode closing 1, cari periode closing 2 dari periode sebelumnya
-                        $q->where('periode', '<', $periode->periode)
-                            ->where('vcQuarter', '2')
-                            ->orderBy('periode', 'desc');
-                    }
-                })
-                ->first();
-
             $periodesWithPrevious[] = [
                 'periode' => $periode,
-                'periode_sebelumnya' => $periodeSebelumnya,
+                'periode_sebelumnya' => $this->findPeriodeGajiLangsungSebelumnya($periode),
             ];
         }
 
         return view('proses.closing.index', compact('periodesWithPrevious'));
+    }
+
+    /**
+     * Periode gaji di t_periode yang langsung mendahului $periode dalam urutan penutupan:
+     * - Closing 2 bulan berjalan → sebelumnya closing 1 (tanggal pembayaran periode sama).
+     * - Closing 1 → sebelumnya closing 2 dari tanggal pembayaran bulan sebelumnya (tupel sebelumnya).
+     *
+     * orderBy tidak boleh di dalam callback where(); bisa membuat first() mengambil baris acak / tanggal salah.
+     */
+    private function findPeriodeGajiLangsungSebelumnya(PeriodeGaji $periode): ?PeriodeGaji
+    {
+        $quarterInt = (int) $periode->vcQuarter;
+        $tanggalBayar = $periode->periode;
+
+        return PeriodeGaji::where('vcKodeDivisi', $periode->vcKodeDivisi)
+            ->where(function ($q) use ($tanggalBayar, $quarterInt) {
+                $q->where('periode', '<', $tanggalBayar)
+                    ->orWhere(function ($qq) use ($tanggalBayar, $quarterInt) {
+                        $qq->where('periode', '=', $tanggalBayar)
+                            ->whereRaw('CAST(vcQuarter AS UNSIGNED) < ?', [$quarterInt]);
+                    });
+            })
+            ->orderByDesc('periode')
+            ->orderByDesc('vcQuarter')
+            ->first();
     }
 
     /**
@@ -124,11 +134,11 @@ class ClosingController extends Controller
 
             $message = "Proses gaji selesai. Berhasil: {$processed} periode";
             if (!empty($errors)) {
-                $message .= ". Error: " . count($errors) . " periode";
+                $message .= ". Error: " . count($errors) . " periode — " . implode('; ', array_slice($errors, 0, 3));
             }
 
             return response()->json([
-                'success' => true,
+                'success' => $processed > 0,
                 'message' => $message,
                 'processed' => $processed,
                 'errors' => $errors
@@ -214,6 +224,16 @@ class ClosingController extends Controller
                     $errors[] = "NIK {$karyawan->Nik}: " . $e->getMessage();
                     \Log::error("Error calculating payroll for NIK {$karyawan->Nik}: " . $e->getMessage());
                 }
+            }
+
+            if ($processedCount === 0) {
+                $sampleError = !empty($errors) ? $errors[0] : 'Tidak ada data yang tersimpan ke t_closing';
+                return [
+                    'success' => false,
+                    'message' => 'Proses closing gagal untuk semua karyawan. Contoh error: ' . $sampleError,
+                    'processed' => 0,
+                    'errors' => $errors,
+                ];
             }
 
             return [
@@ -347,6 +367,9 @@ class ClosingController extends Controller
         // 10. Hitung potongan dari hutang piutang
         $potonganHutangPiutang = $this->calculatePotonganHutangPiutang($nik, $tanggalAwal, $tanggalAkhir, $vcQuarter);
 
+        // 10a. Tunjangan jabatan (hutang piutang jenis 5) — menambah pendapatan, bukan potongan
+        $decTunjanganJabatan = $this->calculateTunjanganJabatan($nik, $tanggalAwal, $tanggalAkhir);
+
         // 11. Hitung premi hadir dan copy data absensi P1 ke field int*Lalu (hanya periode 2)
         $decPremi = 0;
         $intCutiLalu = 0;
@@ -454,6 +477,7 @@ class ClosingController extends Controller
             'decVarMakan' => $decVarMakan,
             'decVarTransport' => $decVarTransport,
             'decRapel' => $this->getRapel($nik, $tanggalAwal, $tanggalAkhir),
+            'decTunjanganJabatan' => $decTunjanganJabatan,
             'decUangMakan' => $tunjanganData['total_makan'],
             'decTransport' => $tunjanganData['total_transport'],
             'intMakan' => $tunjanganData['jumlah_makan'],
@@ -476,6 +500,8 @@ class ClosingController extends Controller
             'decLemburKerja1' => $lemburData['rupiah_kerja_1'],
             'decLemburKerja2' => $lemburData['rupiah_kerja_2'],
             'decLemburKerja3' => $lemburData['rupiah_kerja_3'],
+            'decJamLemburKerja4' => $lemburData['jam_kerja_4'],
+            'decLemburKerja4' => $lemburData['rupiah_kerja_4'],
             'decJamLemburLibur2' => $lemburData['jam_libur_2'],
             'decJamLemburLibur3' => $lemburData['jam_libur_3'],
             'decLembur2' => $lemburData['rupiah_libur_2'],
@@ -484,7 +510,8 @@ class ClosingController extends Controller
             'decJamLemburLibur' => $lemburData['total_jam_libur'],
             'decTotallembur1' => $lemburData['rupiah_kerja_1'],
             'decTotallembur2' => $lemburData['rupiah_kerja_2'] + $lemburData['rupiah_libur_2'],
-            'decTotallembur3' => $lemburData['rupiah_kerja_3'] + $lemburData['rupiah_libur_3'],
+            'decTotallembur3' => $lemburData['rupiah_kerja_3'] + $lemburData['rupiah_libur_3x'],
+            'decTotallembur4' => $lemburData['rupiah_kerja_4'] + $lemburData['rupiah_libur_4x'],
             'intCutiLalu' => $intCutiLalu,
             'intSakitLalu' => $intSakitLalu,
             'intHcLalu' => $intHcLalu,
@@ -557,20 +584,43 @@ class ClosingController extends Controller
     {
         $totalJam = 0;
         foreach ($izinKeluar as $izin) {
-            if (!$izin->dtDari) continue;
-
             $tanggal = $izin->dtTanggal instanceof Carbon ? $izin->dtTanggal->copy() : Carbon::parse($izin->dtTanggal);
-            $dari = $tanggal->copy()->setTimeFromTimeString((string) $izin->dtDari);
 
-            // Tentukan sampai
-            $rawSampai = $izin->dtSampai ? (string) $izin->dtSampai : null;
-            $isZero = $rawSampai && (substr($rawSampai, 0, 5) === '00:00');
+            // Ambil shift pulang untuk perhitungan
             $shiftPulang = null;
             if ($karyawan->shift && $karyawan->shift->vcPulang) {
                 $shiftPulang = $karyawan->shift->vcPulang instanceof Carbon
                     ? $karyawan->shift->vcPulang->format('H:i')
                     : substr((string) $karyawan->shift->vcPulang, 0, 5);
             }
+            
+            // Cek apakah ini "Pulang Cepat" (tipe = "Pulang Cepat" dan dtDari = null)
+            $isPulangCepat = ($izin->vcTipeIzin === 'Pulang Cepat' && !$izin->dtDari);
+            
+            if ($isPulangCepat) {
+                // Logika khusus untuk "Pulang Cepat": Jam Pulang Shift - Jam Sampai
+                $jamSampai = $izin->dtSampai ? substr((string) $izin->dtSampai, 0, 5) : null;
+                
+                if ($shiftPulang && $jamSampai) {
+                    $tShiftPulang = $tanggal->copy()->setTimeFromTimeString($shiftPulang);
+                    $tSampai = $tanggal->copy()->setTimeFromTimeString($jamSampai);
+                    
+                    // Hanya hitung jika jam sampai < jam pulang shift (valid untuk pulang cepat)
+                    if ($tSampai->lessThan($tShiftPulang)) {
+                        // Hitung selisih dalam menit, lalu konversi ke jam
+                        $menit = $tSampai->diffInMinutes($tShiftPulang, true);
+                        $totalJam += round($menit / 60, 2);
+                    }
+                }
+            } else {
+                // Logika untuk tipe lain (Masuk Siang, Izin Biasa): dtDari ke dtSampai
+                if (!$izin->dtDari) continue;
+
+                $dari = $tanggal->copy()->setTimeFromTimeString((string) $izin->dtDari);
+
+                // Tentukan sampai
+                $rawSampai = $izin->dtSampai ? (string) $izin->dtSampai : null;
+                $isZero = $rawSampai && (substr($rawSampai, 0, 5) === '00:00');
             $sampaiClock = (!$rawSampai || $isZero) ? $shiftPulang : substr($rawSampai, 0, 5);
             if (!$sampaiClock) continue;
 
@@ -588,6 +638,7 @@ class ClosingController extends Controller
             }
 
             $totalJam += round($menit / 60, 2);
+            }
         }
         return $totalJam;
     }
@@ -603,10 +654,14 @@ class ClosingController extends Controller
         $rupiahKerja2 = 0;
         $jamKerja3 = 0;
         $rupiahKerja3 = 0;
+        $jamKerja4 = 0;
+        $rupiahKerja4 = 0;
         $jamLibur2 = 0;
         $rupiahLibur2 = 0;
         $jamLibur3 = 0;
         $rupiahLibur3 = 0;
+        $rupiahLibur3x = 0;
+        $rupiahLibur4x = 0;
         $bebanTgi = 0;
         $bebanSiaExp = 0;
         $bebanSiaProd = 0;
@@ -659,35 +714,38 @@ class ClosingController extends Controller
                     $jam3 = $totalJamLembur > 9 ? min(3, $totalJamLembur - 9) : 0;
 
                     $rupiah2 = $jam1 * 2 * $ratePerJam;
-                    $rupiah3 = $jam2 * 3 * $ratePerJam + $jam3 * 4 * $ratePerJam;
+                    $rupiahLiburKe9 = $jam2 * 3 * $ratePerJam;
+                    $rupiahLiburKe10 = $jam3 * 4 * $ratePerJam;
+                    $rupiah3 = $rupiahLiburKe9 + $rupiahLiburKe10;
 
                     $jamLibur2 += $jam1;
                     $jamLibur3 += ($jam2 + $jam3);
                     $rupiahLibur2 += $rupiah2;
                     $rupiahLibur3 += $rupiah3;
+                    $rupiahLibur3x += $rupiahLiburKe9;
+                    $rupiahLibur4x += $rupiahLiburKe10;
                 }
             } else {
-                // Hari kerja normal (HKN): 1.5x (jam pertama), 2x (jam berikutnya)
-                // Perhitungan: Jam ke-1 maksimal 1 jam per hari, sisanya masuk ke Jam ke-2
-                // Contoh: 
-                // - Total 2 jam → J1=1 jam, J2=1 jam
-                // - Total 4 jam → J1=1 jam, J2=3 jam
-                // - Total 8 jam → J1=1 jam, J2=7 jam
+                // Hari kerja normal (HKN): J1 1.5× (max 1 jam), J2 2× (max 8 jam), J3 3× (max 1 jam), J4 4× (sisa)
                 if ($totalJamLembur > 0) {
-                    // Jam ke-1: maksimal 1 jam per hari (hanya di hari kerja)
                     $jam1 = min(1, $totalJamLembur);
-                    // Jam ke-2: sisa jam setelah jam ke-1 (hanya di hari kerja)
-                    $jam2 = max(0, $totalJamLembur - $jam1);
+                    $jam2 = min(8, max(0, $totalJamLembur - 1));
+                    $jam3 = min(1, max(0, $totalJamLembur - 9));
+                    $jam4 = max(0, $totalJamLembur - 10);
 
-                    // Hitung rupiah: Jam ke-1 = 1.5x, Jam ke-2 = 2x
                     $rupiah1 = $jam1 * 1.5 * $ratePerJam;
                     $rupiah2 = $jam2 * 2 * $ratePerJam;
+                    $rupiah3 = $jam3 * 3 * $ratePerJam;
+                    $rupiah4 = $jam4 * 4 * $ratePerJam;
 
-                    // Akumulasi per hari kerja
                     $jamKerja1 += $jam1;
                     $jamKerja2 += $jam2;
+                    $jamKerja3 += $jam3;
+                    $jamKerja4 += $jam4;
                     $rupiahKerja1 += $rupiah1;
                     $rupiahKerja2 += $rupiah2;
+                    $rupiahKerja3 += $rupiah3;
+                    $rupiahKerja4 += $rupiah4;
                 }
             }
 
@@ -726,7 +784,7 @@ class ClosingController extends Controller
                     if ($isHariLibur) {
                         $bebanLembur = $rupiahLibur2 + $rupiahLibur3;
                     } else {
-                        $bebanLembur = $rupiahKerja1 + $rupiahKerja2;
+                        $bebanLembur = $rupiahKerja1 + $rupiahKerja2 + $rupiahKerja3 + $rupiahKerja4;
                     }
 
                     // Mapping penanggung biaya ke field beban (backward compatibility)
@@ -751,14 +809,18 @@ class ClosingController extends Controller
             'jam_kerja_1' => $jamKerja1,
             'jam_kerja_2' => $jamKerja2,
             'jam_kerja_3' => $jamKerja3,
+            'jam_kerja_4' => $jamKerja4,
             'rupiah_kerja_1' => $rupiahKerja1,
             'rupiah_kerja_2' => $rupiahKerja2,
             'rupiah_kerja_3' => $rupiahKerja3,
+            'rupiah_kerja_4' => $rupiahKerja4,
             'jam_libur_2' => $jamLibur2,
             'jam_libur_3' => $jamLibur3,
             'rupiah_libur_2' => $rupiahLibur2,
             'rupiah_libur_3' => $rupiahLibur3,
-            'total_jam_kerja' => $jamKerja1 + $jamKerja2 + $jamKerja3,
+            'rupiah_libur_3x' => $rupiahLibur3x,
+            'rupiah_libur_4x' => $rupiahLibur4x,
+            'total_jam_kerja' => $jamKerja1 + $jamKerja2 + $jamKerja3 + $jamKerja4,
             'total_jam_libur' => $jamLibur2 + $jamLibur3,
             'beban_tgi' => $bebanTgi,
             'beban_sia_exp' => $bebanSiaExp,
@@ -994,9 +1056,11 @@ class ClosingController extends Controller
             elseif ($vcJenis == '1') {
                 $dplk += $amount;
             }
-            // Lain-lain (potongan lainnya)
+            // Lain-lain (potongan lainnya); jenis 5 tunjangan jabatan hanya di decTunjanganJabatan
             else {
-                $lain += $amount;
+                if ($vcJenis !== '5') {
+                    $lain += $amount;
+                }
             }
         }
 
@@ -1006,6 +1070,23 @@ class ClosingController extends Controller
             'dplk' => $dplk,
             'lain' => $lain,
         ];
+    }
+
+    /**
+     * Tunjangan jabatan dari t_hutang_piutang (master jenis 5), overlap periode closing.
+     * Menambah pendapatan; disimpan di t_closing.decTunjanganJabatan.
+     */
+    private function calculateTunjanganJabatan($nik, $tanggalAwal, $tanggalAkhir): float
+    {
+        $sum = HutangPiutang::where('vcNik', $nik)
+            ->where('vcJenis', '5')
+            ->where(function ($q) use ($tanggalAwal, $tanggalAkhir) {
+                $q->where('dtTanggalAwal', '<=', $tanggalAkhir->format('Y-m-d'))
+                    ->where('dtTanggalAkhir', '>=', $tanggalAwal->format('Y-m-d'));
+            })
+            ->sum('decAmount');
+
+        return round((float) $sum, 2);
     }
 
     /**
@@ -1142,36 +1223,14 @@ class ClosingController extends Controller
      */
     private function calculateHariTidakMasuk($nik, $kodeAbsen, $tanggalAwal, $tanggalAkhir)
     {
-        // Query untuk mencari semua record tidak masuk yang overlap dengan periode
-        // Overlap terjadi jika: dtTanggalMulai <= tanggalAkhir AND dtTanggalSelesai >= tanggalAwal
         $tidakMasukRecords = TidakMasuk::where('vcNik', $nik)
             ->where('vcKodeAbsen', $kodeAbsen)
             ->where('dtTanggalMulai', '<=', $tanggalAkhir->format('Y-m-d'))
             ->where('dtTanggalSelesai', '>=', $tanggalAwal->format('Y-m-d'))
             ->get();
 
-        $totalHari = 0;
-
-        foreach ($tidakMasukRecords as $record) {
-            if (!$record->dtTanggalMulai || !$record->dtTanggalSelesai) {
-                continue;
-            }
-
-            $mulai = Carbon::parse($record->dtTanggalMulai);
-            $selesai = Carbon::parse($record->dtTanggalSelesai);
-
-            // Tentukan range overlap: mulai dari max(tanggal mulai, tanggal awal periode) sampai min(tanggal selesai, tanggal akhir periode)
-            $overlapMulai = $mulai->greaterThan($tanggalAwal) ? $mulai->copy() : $tanggalAwal->copy();
-            $overlapSelesai = $selesai->lessThan($tanggalAkhir) ? $selesai->copy() : $tanggalAkhir->copy();
-
-            // Hitung hari overlap (inklusif)
-            if ($overlapMulai->lte($overlapSelesai)) {
-                $hariOverlap = $overlapMulai->diffInDays($overlapSelesai) + 1;
-                $totalHari += $hariOverlap;
-            }
-        }
-
-        return $totalHari;
+        // Satu tanggal hanya dihitung sekali (hindari ganda dari banyak record overlap)
+        return $this->countUniqueTidakMasukDays($nik, $kodeAbsen, $tanggalAwal, $tanggalAkhir, $tidakMasukRecords);
     }
 
     /**

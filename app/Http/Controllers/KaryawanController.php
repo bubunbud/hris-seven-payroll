@@ -16,6 +16,7 @@ use App\Models\Bagian;
 use App\Models\Shift;
 use App\Models\Golongan;
 use App\Models\Jabatan;
+use App\Models\Seksi;
 use App\Services\ActivityLogService;
 
 class KaryawanController extends Controller
@@ -64,7 +65,60 @@ class KaryawanController extends Controller
             $statusPegawais = ['Tetap', 'Kontrak', 'Magang', 'Harian', 'Outsourcing'];
         }
 
+        // Tambahkan "Management" ke Group Pegawai jika belum ada (case-insensitive)
+        $hasManagement = false;
+        foreach ($groupPegawais as $group) {
+            if (strtolower($group) === 'management') {
+                $hasManagement = true;
+                break;
+            }
+        }
+        if (!$hasManagement) {
+            $groupPegawais[] = 'Management';
+            sort($groupPegawais);
+        }
+
         return view('master.karyawan.index', compact('karyawans', 'divisis', 'departemens', 'bagians', 'shifts', 'golongans', 'jabatans', 'groupPegawais', 'statusPegawais'));
+    }
+
+    /**
+     * Get jabatans by divisi (filtered by prefix)
+     */
+    public function getJabatansByDivisi(Request $request)
+    {
+        $request->validate([
+            'divisi' => 'required|string',
+        ]);
+
+        // Mapping kode m_divisi → awalan vcKodeJabatan (m_jabatan).
+        // Renaltech JRMA | Sugih Export & Produksi 1.1/1.2 JSIA | Sutek JSMU
+        $prefixMapping = [
+            'RMA' => 'JRMA',       // PT Renaltech Mitra Abadi
+            'SIA-CPD' => 'JSIA',   // PT Sugih Instrumendo Abadi, Export
+            'SIA-P11' => 'JSIA',   // PT Sugih Instrumendo Abadi, Produksi 1.1
+            'SIA-P12' => 'JSIA',   // PT Sugih Instrumendo Abadi, Produksi 1.2
+            'SMU' => 'JSMU',       // PT Sutek Mitra Utama
+        ];
+
+        $divisi = $request->divisi;
+        $jabatans = collect();
+
+        // Jika divisi ada di mapping, filter berdasarkan prefix
+        if (isset($prefixMapping[$divisi])) {
+            $prefix = $prefixMapping[$divisi];
+            $jabatans = Jabatan::where('vcKodeJabatan', 'like', $prefix . '%')
+                ->orderBy('vcKodeJabatan')
+                ->get(['vcKodeJabatan', 'vcNamaJabatan']);
+        } else {
+            // Jika divisi tidak ada di mapping, return semua jabatan
+            $jabatans = Jabatan::orderBy('vcKodeJabatan')
+                ->get(['vcKodeJabatan', 'vcNamaJabatan']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'jabatans' => $jabatans
+        ]);
     }
 
     /**
@@ -171,8 +225,14 @@ class KaryawanController extends Controller
         // Handle photo upload
         if ($request->hasFile('photo')) {
             $photo = $request->file('photo');
-            $photoName = time() . '_' . $data['Nik'] . '.' . $photo->getClientOriginalExtension();
-            $photoPath = $photo->storeAs('public/photos', $photoName);
+
+            // Simpan dengan nama file = NIK.ext agar konsisten dan mudah direferensikan kembali
+            $extension = $photo->getClientOriginalExtension();
+            $photoName = $data['Nik'] . '.' . $extension;
+
+            // Simpan ke storage/app/public/photos -> diakses via /storage/photos/{NIK.ext}
+            $photo->storeAs('public/photos', $photoName);
+
             $data['photo'] = $photoName;
         }
 
@@ -212,6 +272,101 @@ class KaryawanController extends Controller
             [],
             JSON_INVALID_UTF8_SUBSTITUTE
         );
+    }
+
+    /**
+     * Biodata karyawan untuk pratinjau cetak / arsip (layout bergaya CV, satu bagian per halaman).
+     */
+    public function biodataCetak(string $nik)
+    {
+        $karyawan = Karyawan::with(['jabatan', 'shift', 'divisi', 'departemen', 'bagian'])->find($nik);
+        if (! $karyawan) {
+            abort(404, 'Karyawan tidak ditemukan.');
+        }
+
+        $keluarga = Keluarga::where('nik', $nik)->orderBy('NamaKeluarga')->get();
+        $pendidikan = Pendidikan::where('employee_nik', $nik)->orderBy('education_level')->get();
+
+        $pelatihan = collect();
+        if (DB::getSchemaBuilder()->hasTable('t_pelatihan')) {
+            $pelatihan = Pelatihan::where('Nik', $nik)->orderByDesc('tg_pelatihan')->get();
+        }
+
+        $mutasi = collect();
+        if (DB::getSchemaBuilder()->hasTable('t_mutasi')) {
+            $mutasi = DB::table('t_mutasi')->where('nik', $nik)->orderByDesc('vcTglSK')->orderByDesc('NoSK')->get();
+        }
+
+        $catatanKaryawan = collect();
+        if (DB::getSchemaBuilder()->hasTable('t_karyawan_catatan')) {
+            try {
+                $catatanKaryawan = DB::table('t_karyawan_catatan')
+                    ->where('karyawan_nik', $nik)
+                    ->orderByDesc('tanggal')
+                    ->orderByDesc('id')
+                    ->get()
+                    ->map(function ($row) {
+                        $row->file_url = $this->karyawanCatatanFileUrl($row->file_lampiran ?? null);
+
+                        return $row;
+                    });
+            } catch (\Throwable $e) {
+                Log::warning('biodataCetak catatan karyawan: '.$e->getMessage());
+            }
+        }
+
+        $golongan = $karyawan->Gol ? Golongan::find($karyawan->Gol) : null;
+
+        $seksi = null;
+        if ($karyawan->vcKodeSeksi) {
+            $seksi = Seksi::where('vcKodeseksi', $karyawan->vcKodeSeksi)->first();
+        }
+
+        $photoUrl = null;
+        if ($karyawan->photo) {
+            $photoUrl = asset('storage/photos/'.$karyawan->photo);
+        }
+
+        // Nama orang tua: eksplisit dari kolom m_karyawan.nama_ayah & m_karyawan.nama_ibu
+        $namaAyahOrtu = $karyawan->nama_ayah;
+        $namaIbuOrtu = $karyawan->nama_ibu;
+        try {
+            $sb = DB::getSchemaBuilder();
+            $cols = [];
+            if ($sb->hasColumn('m_karyawan', 'nama_ayah')) {
+                $cols[] = 'nama_ayah';
+            }
+            if ($sb->hasColumn('m_karyawan', 'nama_ibu')) {
+                $cols[] = 'nama_ibu';
+            }
+            if ($cols !== []) {
+                $ortu = DB::table('m_karyawan')->where('Nik', $nik)->first($cols);
+                if ($ortu) {
+                    if (in_array('nama_ayah', $cols, true)) {
+                        $namaAyahOrtu = $ortu->nama_ayah;
+                    }
+                    if (in_array('nama_ibu', $cols, true)) {
+                        $namaIbuOrtu = $ortu->nama_ibu;
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('biodataCetak ortu columns: '.$e->getMessage());
+        }
+
+        return view('master.karyawan.biodata-cetak', compact(
+            'karyawan',
+            'keluarga',
+            'pendidikan',
+            'pelatihan',
+            'mutasi',
+            'catatanKaryawan',
+            'golongan',
+            'seksi',
+            'photoUrl',
+            'namaAyahOrtu',
+            'namaIbuOrtu'
+        ));
     }
 
     /**
@@ -502,14 +657,18 @@ class KaryawanController extends Controller
 
         // Handle photo upload
         if ($request->hasFile('photo')) {
-            // Delete old photo if exists
+            // Hapus foto lama jika ada
             if ($karyawan->photo) {
                 Storage::delete('public/photos/' . $karyawan->photo);
             }
 
             $photo = $request->file('photo');
-            $photoName = time() . '_' . $karyawan->Nik . '.' . $photo->getClientOriginalExtension();
-            $photoPath = $photo->storeAs('public/photos', $photoName);
+
+            // Simpan dengan nama file = NIK.ext
+            $extension = $photo->getClientOriginalExtension();
+            $photoName = $karyawan->Nik . '.' . $extension;
+
+            $photo->storeAs('public/photos', $photoName);
             $data['photo'] = $photoName;
         }
 
@@ -571,6 +730,30 @@ class KaryawanController extends Controller
             } catch (\Exception $e) {
                 // Table mungkin tidak ada, skip
                 Log::warning('Table t_pendidikan tidak ditemukan atau error saat delete: ' . $e->getMessage());
+            }
+
+            try {
+                if (DB::getSchemaBuilder()->hasTable('t_mutasi')) {
+                    $mutasiFiles = DB::table('t_mutasi')->where('nik', $id)->pluck('vcFileSK');
+                    foreach ($mutasiFiles as $fn) {
+                        $this->deleteMutasiSkFile($fn);
+                    }
+                    DB::table('t_mutasi')->where('nik', $id)->delete();
+                }
+            } catch (\Exception $e) {
+                Log::warning('Table t_mutasi tidak ditemukan atau error saat delete: ' . $e->getMessage());
+            }
+
+            try {
+                if (DB::getSchemaBuilder()->hasTable('t_karyawan_catatan')) {
+                    $catatanFiles = DB::table('t_karyawan_catatan')->where('karyawan_nik', $id)->pluck('file_lampiran');
+                    foreach ($catatanFiles as $fn) {
+                        $this->deleteKaryawanCatatanFile($fn);
+                    }
+                    DB::table('t_karyawan_catatan')->where('karyawan_nik', $id)->delete();
+                }
+            } catch (\Exception $e) {
+                Log::warning('Table t_karyawan_catatan tidak ditemukan atau error saat delete: ' . $e->getMessage());
             }
 
             $karyawan->delete();
@@ -645,6 +828,32 @@ class KaryawanController extends Controller
         return response()->json([
             'success' => true,
             'bagians' => $bagians
+        ]);
+    }
+
+    /**
+     * Get seksis by divisi, departemen, and bagian (based on m_hirarki_seksi)
+     */
+    public function getSeksisByDivisiDeptBagian(Request $request)
+    {
+        $request->validate([
+            'divisi' => 'required|string',
+            'departemen' => 'required|string',
+            'bagian' => 'required|string',
+        ]);
+
+        $seksis = DB::table('m_hirarki_seksi')
+            ->join('m_seksi', 'm_hirarki_seksi.vcKodeSeksi', '=', 'm_seksi.vcKodeseksi')
+            ->where('m_hirarki_seksi.vcKodeDivisi', $request->divisi)
+            ->where('m_hirarki_seksi.vcKodeDept', $request->departemen)
+            ->where('m_hirarki_seksi.vcKodeBagian', $request->bagian)
+            ->select('m_seksi.vcKodeseksi as vcKodeSeksi', 'm_seksi.vcNamaseksi as vcNamaSeksi')
+            ->orderBy('m_seksi.vcKodeseksi')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'seksis' => $seksis
         ]);
     }
 
@@ -1331,6 +1540,609 @@ class KaryawanController extends Controller
             'copied' => $copied,
             'total' => $pelatihanLama->count(),
             'errors' => $errors
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Simpan upload dokumen SK mutasi (PDF / gambar) di storage publik.
+     */
+    private function storeMutasiSkFile(\Illuminate\Http\UploadedFile $file, string $nik, string $noSK): string
+    {
+        $ext = strtolower($file->getClientOriginalExtension());
+        $safeSk = preg_replace('/[^A-Za-z0-9_-]+/', '_', $noSK);
+        $safeSk = substr($safeSk, 0, 40);
+        $fileName = $nik . '_' . $safeSk . '_' . time() . '_' . substr(sha1((string) microtime(true)), 0, 8) . '.' . $ext;
+        $file->storeAs('public/mutasi_sk', $fileName);
+
+        return $fileName;
+    }
+
+    private function deleteMutasiSkFile(?string $fileName): void
+    {
+        if (! $fileName) {
+            return;
+        }
+        Storage::delete('public/mutasi_sk/' . $fileName);
+    }
+
+    private function mutasiSkPublicUrl(?string $fileName): ?string
+    {
+        if (! $fileName) {
+            return null;
+        }
+
+        return Storage::disk('public')->url('mutasi_sk/' . $fileName);
+    }
+
+    /**
+     * Riwayat mutasi karyawan (tab Mutasi).
+     * t_mutasi: PK (nik, NoSK), vcTglSK, vcDivisi, vcDept, vcbagian, vcSeksi, vcJabatan, vcFileSK.
+     */
+    public function getMutasi(string $nik)
+    {
+        try {
+            if (! DB::getSchemaBuilder()->hasTable('t_mutasi')) {
+                return response()->json(['success' => true, 'mutasi' => []]);
+            }
+
+            $rows = DB::table('t_mutasi')
+                ->where('nik', $nik)
+                ->orderByDesc('vcTglSK')
+                ->orderByDesc('NoSK')
+                ->get();
+
+            $mutasi = $rows->map(function ($row) {
+                $arr = (array) $row;
+                $fn = $row->vcFileSK ?? null;
+                $arr['sk_file_url'] = $this->mutasiSkPublicUrl($fn);
+
+                return $arr;
+            });
+
+            return response()->json([
+                'success' => true,
+                'mutasi' => $mutasi,
+                'count' => $mutasi->count(),
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        } catch (\Exception $e) {
+            Log::error("Error getMutasi NIK {$nik}: " . $e->getMessage());
+
+            return response()->json([
+                'success' => true,
+                'mutasi' => [],
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function addMutasi(Request $request, string $nik)
+    {
+        if (! DB::getSchemaBuilder()->hasTable('t_mutasi')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tabel t_mutasi tidak ditemukan di database.',
+            ], 404);
+        }
+
+        $request->validate([
+            'no_sk' => 'required|string|max:20',
+            'vc_tgl_sk' => 'nullable|date',
+            'vc_divisi' => 'nullable|string|max:100',
+            'vc_dept' => 'nullable|string|max:100',
+            'vcbagian' => 'nullable|string|max:100',
+            'vc_seksi' => 'nullable|string|max:100',
+            'vc_jabatan' => 'nullable|string|max:150',
+            'dokumen_sk' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+        ]);
+
+        if (! Karyawan::find($nik)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Karyawan dengan NIK ' . $nik . ' tidak ditemukan.',
+            ], 404);
+        }
+
+        $dup = DB::table('t_mutasi')->where('nik', $nik)->where('NoSK', $request->no_sk)->exists();
+        if ($dup) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nomor SK ini sudah ada untuk karyawan ini.',
+            ], 422, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $vcFileSK = null;
+        if ($request->hasFile('dokumen_sk')) {
+            $vcFileSK = $this->storeMutasiSkFile($request->file('dokumen_sk'), $nik, $request->no_sk);
+        }
+
+        DB::table('t_mutasi')->insert([
+            'nik' => $nik,
+            'NoSK' => $request->no_sk,
+            'vcTglSK' => $request->vc_tgl_sk,
+            'vcDivisi' => $request->vc_divisi,
+            'vcDept' => $request->vc_dept,
+            'vcbagian' => $request->vcbagian,
+            'vcSeksi' => $request->vc_seksi,
+            'vcJabatan' => $request->vc_jabatan,
+            'vcFileSK' => $vcFileSK,
+        ]);
+
+        $record = DB::table('t_mutasi')->where('nik', $nik)->where('NoSK', $request->no_sk)->first();
+        $recordArr = (array) $record;
+        $recordArr['sk_file_url'] = $this->mutasiSkPublicUrl($record->vcFileSK ?? null);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Data mutasi berhasil ditambahkan.',
+            'record' => $recordArr,
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    public function updateMutasi(Request $request, string $nik, string $noSK)
+    {
+        if (! DB::getSchemaBuilder()->hasTable('t_mutasi')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tabel t_mutasi tidak ditemukan.',
+            ], 404);
+        }
+
+        $oldNoSK = rawurldecode($noSK);
+
+        $request->validate([
+            'no_sk' => 'required|string|max:20',
+            'vc_tgl_sk' => 'nullable|date',
+            'vc_divisi' => 'nullable|string|max:100',
+            'vc_dept' => 'nullable|string|max:100',
+            'vcbagian' => 'nullable|string|max:100',
+            'vc_seksi' => 'nullable|string|max:100',
+            'vc_jabatan' => 'nullable|string|max:150',
+            'dokumen_sk' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'remove_sk_file' => 'nullable|boolean',
+        ]);
+
+        $exists = DB::table('t_mutasi')->where('nik', $nik)->where('NoSK', $oldNoSK)->first();
+        if (! $exists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data mutasi tidak ditemukan.',
+            ], 404, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $newNoSK = $request->no_sk;
+        if ($newNoSK !== $oldNoSK) {
+            $dup = DB::table('t_mutasi')->where('nik', $nik)->where('NoSK', $newNoSK)->exists();
+            if ($dup) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Nomor SK ini sudah ada untuk karyawan ini.',
+                ], 422, [], JSON_UNESCAPED_UNICODE);
+            }
+        }
+
+        $vcFileSK = $exists->vcFileSK ?? null;
+        if ($request->boolean('remove_sk_file')) {
+            $this->deleteMutasiSkFile($vcFileSK);
+            $vcFileSK = null;
+        } elseif ($request->hasFile('dokumen_sk')) {
+            $this->deleteMutasiSkFile($vcFileSK);
+            $vcFileSK = $this->storeMutasiSkFile($request->file('dokumen_sk'), $nik, $newNoSK);
+        }
+
+        DB::table('t_mutasi')
+            ->where('nik', $nik)
+            ->where('NoSK', $oldNoSK)
+            ->update([
+                'NoSK' => $newNoSK,
+                'vcTglSK' => $request->vc_tgl_sk,
+                'vcDivisi' => $request->vc_divisi,
+                'vcDept' => $request->vc_dept,
+                'vcbagian' => $request->vcbagian,
+                'vcSeksi' => $request->vc_seksi,
+                'vcJabatan' => $request->vc_jabatan,
+                'vcFileSK' => $vcFileSK,
+            ]);
+
+        $record = DB::table('t_mutasi')->where('nik', $nik)->where('NoSK', $newNoSK)->first();
+        $recordArr = (array) $record;
+        $recordArr['sk_file_url'] = $this->mutasiSkPublicUrl($record->vcFileSK ?? null);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Data mutasi berhasil diperbarui.',
+            'record' => $recordArr,
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    public function deleteMutasi(string $nik, string $noSK)
+    {
+        if (! DB::getSchemaBuilder()->hasTable('t_mutasi')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tabel t_mutasi tidak ditemukan.',
+            ], 404);
+        }
+
+        $noSK = rawurldecode($noSK);
+
+        $row = DB::table('t_mutasi')
+            ->where('nik', $nik)
+            ->where('NoSK', $noSK)
+            ->first();
+
+        if (! $row) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data mutasi tidak ditemukan.',
+            ], 404, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $this->deleteMutasiSkFile($row->vcFileSK ?? null);
+
+        DB::table('t_mutasi')
+            ->where('nik', $nik)
+            ->where('NoSK', $noSK)
+            ->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Data mutasi berhasil dihapus.',
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    public function copyMutasi(Request $request)
+    {
+        $request->validate([
+            'nik_lama' => 'required|string|exists:m_karyawan,Nik',
+            'nik_baru' => 'required|string|exists:m_karyawan,Nik',
+        ]);
+
+        if (! DB::getSchemaBuilder()->hasTable('t_mutasi')) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Tabel t_mutasi tidak ditemukan, skip copy mutasi.',
+                'copied' => 0,
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $rows = DB::table('t_mutasi')->where('nik', $request->nik_lama)->orderBy('NoSK')->get();
+        if ($rows->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Tidak ada data mutasi untuk di-copy.',
+                'copied' => 0,
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $copied = 0;
+        foreach ($rows as $row) {
+            try {
+                $exists = DB::table('t_mutasi')->where('nik', $request->nik_baru)->where('NoSK', $row->NoSK)->exists();
+                if ($exists) {
+                    continue;
+                }
+                $newFileName = null;
+                $oldFile = $row->vcFileSK ?? null;
+                if ($oldFile && Storage::exists('public/mutasi_sk/' . $oldFile)) {
+                    $ext = pathinfo($oldFile, PATHINFO_EXTENSION);
+                    $safeSk = preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) $row->NoSK);
+                    $safeSk = substr($safeSk, 0, 40);
+                    $newFileName = $request->nik_baru . '_' . $safeSk . '_' . time() . '_' . substr(sha1(uniqid((string) $row->NoSK, true)), 0, 8) . '.' . $ext;
+                    Storage::copy('public/mutasi_sk/' . $oldFile, 'public/mutasi_sk/' . $newFileName);
+                }
+                DB::table('t_mutasi')->insert([
+                    'nik' => $request->nik_baru,
+                    'NoSK' => $row->NoSK,
+                    'vcTglSK' => $row->vcTglSK,
+                    'vcDivisi' => $row->vcDivisi,
+                    'vcDept' => $row->vcDept,
+                    'vcbagian' => $row->vcbagian,
+                    'vcSeksi' => $row->vcSeksi,
+                    'vcJabatan' => $row->vcJabatan ?? null,
+                    'vcFileSK' => $newFileName,
+                ]);
+                $copied++;
+            } catch (\Exception $e) {
+                Log::warning('copyMutasi row error: ' . $e->getMessage());
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Data mutasi berhasil di-copy. {$copied} record berhasil di-copy.",
+            'copied' => $copied,
+            'total' => $rows->count(),
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    private function storeKaryawanCatatanFile(\Illuminate\Http\UploadedFile $file, string $nik, int $catatanId): string
+    {
+        $ext = strtolower($file->getClientOriginalExtension());
+        $fileName = $nik . '_catatan_' . $catatanId . '_' . time() . '_' . substr(sha1((string) microtime(true)), 0, 6) . '.' . $ext;
+        $file->storeAs('public/karyawan_catatan', $fileName);
+
+        return $fileName;
+    }
+
+    private function deleteKaryawanCatatanFile(?string $fileName): void
+    {
+        if (! $fileName) {
+            return;
+        }
+        Storage::delete('public/karyawan_catatan/' . $fileName);
+    }
+
+    private function karyawanCatatanFileUrl(?string $fileName): ?string
+    {
+        if (! $fileName) {
+            return null;
+        }
+
+        return Storage::disk('public')->url('karyawan_catatan/' . $fileName);
+    }
+
+    /**
+     * Tab Catatan Karyawan — riwayat disiplin & penghargaan (t_karyawan_catatan).
+     */
+    public function getKaryawanCatatan(string $nik)
+    {
+        try {
+            if (! DB::getSchemaBuilder()->hasTable('t_karyawan_catatan')) {
+                return response()->json(['success' => true, 'catatan' => []]);
+            }
+
+            $rows = DB::table('t_karyawan_catatan')
+                ->where('karyawan_nik', $nik)
+                ->orderByDesc('tanggal')
+                ->orderByDesc('id')
+                ->get();
+
+            $catatan = $rows->map(function ($row) {
+                $arr = (array) $row;
+                $arr['file_url'] = $this->karyawanCatatanFileUrl($row->file_lampiran ?? null);
+
+                return $arr;
+            });
+
+            return response()->json([
+                'success' => true,
+                'catatan' => $catatan,
+                'count' => $catatan->count(),
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        } catch (\Exception $e) {
+            Log::error("Error getKaryawanCatatan NIK {$nik}: " . $e->getMessage());
+
+            return response()->json([
+                'success' => true,
+                'catatan' => [],
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function addKaryawanCatatan(Request $request, string $nik)
+    {
+        if (! DB::getSchemaBuilder()->hasTable('t_karyawan_catatan')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tabel t_karyawan_catatan tidak ditemukan.',
+            ], 404);
+        }
+
+        if (! Karyawan::find($nik)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Karyawan dengan NIK ini tidak ditemukan.',
+            ], 404);
+        }
+
+        $request->validate([
+            'tanggal' => 'nullable|date',
+            'jenis' => 'required|string|in:SP,Teguran,Peringatan Lisan,Penghargaan,Catatan,Pelanggaran',
+            'kategori' => 'required|string|in:Disiplin,Penghargaan,Informasi',
+            'judul' => 'required|string|max:255',
+            'deskripsi' => 'nullable|string',
+            'level' => 'required|string|in:SP1,SP2,SP3,Non-SP',
+            'status' => 'required|string|in:Aktif,Selesai,Dibatalkan',
+            'no_dokumen' => 'nullable|string|max:100',
+            'tanggal_berlaku' => 'nullable|date',
+            'tanggal_berakhir' => 'nullable|date',
+            'file_lampiran' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+        ]);
+
+        $id = DB::table('t_karyawan_catatan')->insertGetId([
+            'karyawan_nik' => $nik,
+            'tanggal' => $request->tanggal,
+            'jenis' => $request->jenis,
+            'kategori' => $request->kategori,
+            'judul' => $request->judul,
+            'deskripsi' => $request->deskripsi,
+            'level' => $request->level,
+            'status' => $request->status,
+            'no_dokumen' => $request->no_dokumen,
+            'file_lampiran' => null,
+            'tanggal_berlaku' => $request->tanggal_berlaku,
+            'tanggal_berakhir' => $request->tanggal_berakhir,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        if ($request->hasFile('file_lampiran')) {
+            $fn = $this->storeKaryawanCatatanFile($request->file('file_lampiran'), $nik, $id);
+            DB::table('t_karyawan_catatan')->where('id', $id)->update([
+                'file_lampiran' => $fn,
+                'updated_at' => now(),
+            ]);
+        }
+
+        $record = DB::table('t_karyawan_catatan')->where('id', $id)->first();
+        $recArr = (array) $record;
+        $recArr['file_url'] = $this->karyawanCatatanFileUrl($record->file_lampiran ?? null);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Catatan berhasil ditambahkan.',
+            'record' => $recArr,
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    public function updateKaryawanCatatan(Request $request, string $nik, string $id)
+    {
+        if (! DB::getSchemaBuilder()->hasTable('t_karyawan_catatan')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tabel t_karyawan_catatan tidak ditemukan.',
+            ], 404);
+        }
+
+        $catatanId = (int) $id;
+        $exists = DB::table('t_karyawan_catatan')->where('id', $catatanId)->where('karyawan_nik', $nik)->first();
+        if (! $exists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data catatan tidak ditemukan.',
+            ], 404, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $request->validate([
+            'tanggal' => 'nullable|date',
+            'jenis' => 'required|string|in:SP,Teguran,Peringatan Lisan,Penghargaan,Catatan,Pelanggaran',
+            'kategori' => 'required|string|in:Disiplin,Penghargaan,Informasi',
+            'judul' => 'required|string|max:255',
+            'deskripsi' => 'nullable|string',
+            'level' => 'required|string|in:SP1,SP2,SP3,Non-SP',
+            'status' => 'required|string|in:Aktif,Selesai,Dibatalkan',
+            'no_dokumen' => 'nullable|string|max:100',
+            'tanggal_berlaku' => 'nullable|date',
+            'tanggal_berakhir' => 'nullable|date',
+            'file_lampiran' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'remove_file_lampiran' => 'nullable|boolean',
+        ]);
+
+        $fileName = $exists->file_lampiran ?? null;
+        if ($request->boolean('remove_file_lampiran')) {
+            $this->deleteKaryawanCatatanFile($fileName);
+            $fileName = null;
+        } elseif ($request->hasFile('file_lampiran')) {
+            $this->deleteKaryawanCatatanFile($fileName);
+            $fileName = $this->storeKaryawanCatatanFile($request->file('file_lampiran'), $nik, $catatanId);
+        }
+
+        DB::table('t_karyawan_catatan')->where('id', $catatanId)->update([
+            'tanggal' => $request->tanggal,
+            'jenis' => $request->jenis,
+            'kategori' => $request->kategori,
+            'judul' => $request->judul,
+            'deskripsi' => $request->deskripsi,
+            'level' => $request->level,
+            'status' => $request->status,
+            'no_dokumen' => $request->no_dokumen,
+            'file_lampiran' => $fileName,
+            'tanggal_berlaku' => $request->tanggal_berlaku,
+            'tanggal_berakhir' => $request->tanggal_berakhir,
+            'updated_at' => now(),
+        ]);
+
+        $record = DB::table('t_karyawan_catatan')->where('id', $catatanId)->first();
+        $recArr = (array) $record;
+        $recArr['file_url'] = $this->karyawanCatatanFileUrl($record->file_lampiran ?? null);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Catatan berhasil diperbarui.',
+            'record' => $recArr,
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    public function deleteKaryawanCatatan(string $nik, string $id)
+    {
+        if (! DB::getSchemaBuilder()->hasTable('t_karyawan_catatan')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tabel tidak ditemukan.',
+            ], 404);
+        }
+
+        $catatanId = (int) $id;
+        $row = DB::table('t_karyawan_catatan')->where('id', $catatanId)->where('karyawan_nik', $nik)->first();
+        if (! $row) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data catatan tidak ditemukan.',
+            ], 404, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $this->deleteKaryawanCatatanFile($row->file_lampiran ?? null);
+        DB::table('t_karyawan_catatan')->where('id', $catatanId)->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Catatan berhasil dihapus.',
+        ], 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    public function copyKaryawanCatatan(Request $request)
+    {
+        $request->validate([
+            'nik_lama' => 'required|string|exists:m_karyawan,Nik',
+            'nik_baru' => 'required|string|exists:m_karyawan,Nik',
+        ]);
+
+        if (! DB::getSchemaBuilder()->hasTable('t_karyawan_catatan')) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Tabel catatan tidak ditemukan, skip copy.',
+                'copied' => 0,
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $rows = DB::table('t_karyawan_catatan')->where('karyawan_nik', $request->nik_lama)->orderBy('id')->get();
+        if ($rows->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Tidak ada catatan untuk di-copy.',
+                'copied' => 0,
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+        }
+
+        $copied = 0;
+        foreach ($rows as $row) {
+            try {
+                $newId = DB::table('t_karyawan_catatan')->insertGetId([
+                    'karyawan_nik' => $request->nik_baru,
+                    'tanggal' => $row->tanggal,
+                    'jenis' => $row->jenis,
+                    'kategori' => $row->kategori,
+                    'judul' => $row->judul,
+                    'deskripsi' => $row->deskripsi,
+                    'level' => $row->level,
+                    'status' => $row->status,
+                    'no_dokumen' => $row->no_dokumen,
+                    'file_lampiran' => null,
+                    'tanggal_berlaku' => $row->tanggal_berlaku,
+                    'tanggal_berakhir' => $row->tanggal_berakhir,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                $oldFile = $row->file_lampiran ?? null;
+                if ($oldFile && Storage::exists('public/karyawan_catatan/' . $oldFile)) {
+                    $ext = pathinfo($oldFile, PATHINFO_EXTENSION);
+                    $newFile = $request->nik_baru . '_catatan_' . $newId . '_' . time() . '_' . substr(sha1(uniqid((string) $row->id, true)), 0, 8) . '.' . $ext;
+                    Storage::copy('public/karyawan_catatan/' . $oldFile, 'public/karyawan_catatan/' . $newFile);
+                    DB::table('t_karyawan_catatan')->where('id', $newId)->update(['file_lampiran' => $newFile, 'updated_at' => now()]);
+                }
+                $copied++;
+            } catch (\Exception $e) {
+                Log::warning('copyKaryawanCatatan row error: ' . $e->getMessage());
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Catatan karyawan berhasil di-copy. {$copied} record.",
+            'copied' => $copied,
+            'total' => $rows->count(),
         ], 200, [], JSON_UNESCAPED_UNICODE);
     }
 

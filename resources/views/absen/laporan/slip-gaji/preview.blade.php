@@ -35,9 +35,12 @@
                 // Ambil nama divisi dari closing->divisi atau karyawan->divisi
                 $namaDivisi = $closing->divisi->vcNamaDivisi ?? $closing->karyawan->divisi->vcNamaDivisi ?? $closing->vcKodeDivisi;
 
+                $jamLibur4x = max(0, (float)($closing->decJamLemburLibur3 ?? 0) - 1);
+                $jamJ4 = (float)($closing->decJamLemburKerja4 ?? 0) + $jamLibur4x;
+
                 $jumlahBersih = $closing->decGapok + $closing->decUangMakan + $closing->decTransport +
-                $closing->decTotallembur1 + $closing->decTotallembur2 + $closing->decTotallembur3 +
-                $closing->decPremi + $closing->decRapel;
+                $closing->decTotallembur1 + $closing->decTotallembur2 + $closing->decTotallembur3 + (float)($closing->decTotallembur4 ?? 0) +
+                $closing->decPremi + $closing->decRapel + (float)($closing->decTunjanganJabatan ?? 0);
                 $jumlahPotongan = $closing->decPotonganBPJSKes + $closing->decPotonganBPJSJHT +
                 $closing->decPotonganBPJSJP + $closing->decIuranSPN +
                 $closing->decPotonganKoperasi + $closing->decPotonganBPR +
@@ -127,6 +130,13 @@
                             </div>
                             @endif
 
+                            @if(($closing->decTotallembur4 ?? 0) > 0)
+                            <div class="row mb-1" style="line-height: 1.4;">
+                                <div class="col-6">Lembur J4:</div>
+                                <div class="col-6 text-end">{{ number_format($jamJ4, 1) }}j (Rp. {{ number_format($closing->decTotallembur4, 0, ',', '.') }})</div>
+                            </div>
+                            @endif
+
                             @if($closing->decPremi > 0)
                             <div class="row mb-1" style="line-height: 1.4;">
                                 <div class="col-6">Premi:</div>
@@ -138,6 +148,13 @@
                             <div class="row mb-1" style="line-height: 1.4;">
                                 <div class="col-6">Selisih Upah:</div>
                                 <div class="col-6 text-end">Rp. {{ number_format($closing->decRapel, 0, ',', '.') }}</div>
+                            </div>
+                            @endif
+
+                            @if(($closing->decTunjanganJabatan ?? 0) > 0)
+                            <div class="row mb-1" style="line-height: 1.4;">
+                                <div class="col-6">Tunj. Jabatan:</div>
+                                <div class="col-6 text-end">Rp. {{ number_format($closing->decTunjanganJabatan, 0, ',', '.') }}</div>
                             </div>
                             @endif
 

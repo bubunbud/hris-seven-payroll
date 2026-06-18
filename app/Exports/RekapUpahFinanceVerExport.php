@@ -45,14 +45,14 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
         foreach ($this->groupedData as $divisiKode => $divisiData) {
             foreach ($divisiData['departemens'] as $deptKode => $deptData) {
                 // Header Departemen
-                $deptRow = array_fill(0, 23, '');
+                $deptRow = array_fill(0, 24, '');
                 $deptRow[0] = 'Dept. ' . $deptData['nama'];
                 $data->push($deptRow);
                 
                 foreach ($deptData['bagians'] as $bagianKode => $bagianData) {
                     if (count($bagianData['closings']) > 0) {
                         // Header Bagian
-                        $bagianRow = array_fill(0, 23, '');
+                        $bagianRow = array_fill(0, 24, '');
                         $bagianRow[0] = 'Bagia ' . $bagianData['nama'];
                         $data->push($bagianRow);
                         
@@ -65,16 +65,15 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                             $premi = $closing->decPremi ?? 0;
                             $gaji = $closing->decGapok ?? 0;
                             $selisihUpah = $closing->decRapel ?? 0;
-                            // JM1, JM2, JM3 mengikuti definisi laporan:
-                            // JM1 = jam ke-1 lembur hari kerja normal
-                            // JM2 = jam ke-2 lembur hari kerja normal + jam ke-2 lembur hari libur
-                            // JM3 = jam ke-3 lembur hari libur
-                            $jm1 = round($closing->decJamLemburKerja1 ?? 0, 1);
-                            $jm2 = round(($closing->decJamLemburKerja2 ?? 0) + ($closing->decJamLemburLibur2 ?? 0), 1);
-                            $jm3 = round($closing->decJamLemburLibur3 ?? 0, 1);
+                            $libur3 = (float)($closing->decJamLemburLibur3 ?? 0);
+                            $jm1 = round((float)($closing->decJamLemburKerja1 ?? 0), 1);
+                            $jm2 = round((float)($closing->decJamLemburKerja2 ?? 0) + (float)($closing->decJamLemburLibur2 ?? 0), 1);
+                            $jm3 = round((float)($closing->decJamLemburKerja3 ?? 0) + min(1.0, $libur3), 1);
+                            $jm4 = round((float)($closing->decJamLemburKerja4 ?? 0) + max(0.0, $libur3 - 1.0), 1);
                             $lembur = ($closing->decTotallembur1 ?? 0) + 
                                       ($closing->decTotallembur2 ?? 0) + 
-                                      ($closing->decTotallembur3 ?? 0);
+                                      ($closing->decTotallembur3 ?? 0) +
+                                      ($closing->decTotallembur4 ?? 0);
                             $uangMakanTransport = ($closing->decUangMakan ?? 0) + ($closing->decTransport ?? 0);
                             
                             // Gunakan decPotonganBPJS* karena field ini yang selalu terisi di database
@@ -104,6 +103,7 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                                 $jm1,
                                 $jm2,
                                 $jm3,
+                                $jm4,
                                 $selisihUpah,
                                 $lembur,
                                 $uangMakanTransport,
@@ -133,6 +133,7 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                             $bagianTotal['jm1'],
                             $bagianTotal['jm2'],
                             $bagianTotal['jm3'],
+                            $bagianTotal['jm4'],
                             $bagianTotal['selisih_upah'],
                             $bagianTotal['lembur'],
                             $bagianTotal['uang_makan_transport'],
@@ -163,6 +164,7 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                     $deptTotal['jm1'],
                     $deptTotal['jm2'],
                     $deptTotal['jm3'],
+                    $deptTotal['jm4'],
                     $deptTotal['selisih_upah'],
                     $deptTotal['lembur'],
                     $deptTotal['uang_makan_transport'],
@@ -192,6 +194,7 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
             $this->grandTotal['jm1'],
             $this->grandTotal['jm2'],
             $this->grandTotal['jm3'],
+            $this->grandTotal['jm4'],
             $this->grandTotal['selisih_upah'],
             $this->grandTotal['lembur'],
             $this->grandTotal['uang_makan_transport'],
@@ -226,6 +229,7 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
             'JM1',
             'JM2',
             'JM3',
+            'JM4',
             'SELISIH UPAH',
             'LEMBUR',
             'Uang Makan + Transport',
@@ -266,19 +270,20 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
             'H' => 8,   // JM1
             'I' => 8,   // JM2
             'J' => 8,   // JM3
-            'K' => 12,  // SELISIH UPAH
-            'L' => 12,  // LEMBUR
-            'M' => 18,  // Uang Makan + Transport
-            'N' => 12,  // BPJS KES
-            'O' => 12,  // BPJS NAKER
-            'P' => 12,  // BPJS PENSIUN
-            'Q' => 12,  // TDK HDR/HC
-            'R' => 12,  // KOPERASI
-            'S' => 12,  // POT. SPN
-            'T' => 12,  // POT. DPLK
-            'U' => 15,  // POT. LAIN-LAIN
-            'V' => 12,  // PENERIMAAN
-            'W' => 12,  // TAKEHOMEPAY
+            'K' => 8,   // JM4
+            'L' => 12,  // SELISIH UPAH
+            'M' => 12,  // LEMBUR
+            'N' => 18,  // Uang Makan + Transport
+            'O' => 12,  // BPJS KES
+            'P' => 12,  // BPJS NAKER
+            'Q' => 12,  // BPJS PENSIUN
+            'R' => 12,  // TDK HDR/HC
+            'S' => 12,  // KOPERASI
+            'T' => 12,  // POT. SPN
+            'U' => 12,  // POT. DPLK
+            'V' => 15,  // POT. LAIN-LAIN
+            'W' => 12,  // PENERIMAAN
+            'X' => 12,  // TAKEHOMEPAY
         ];
     }
 
@@ -315,7 +320,7 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                 
                 // Set header info di atas (row 1-4)
                 $sheet->setCellValue('A1', 'REKAPITULASI UPAH KARYAWAN');
-                $sheet->mergeCells('A1:W1');
+                $sheet->mergeCells('A1:X1');
                 $sheet->getStyle('A1')->applyFromArray([
                     'font' => ['bold' => true, 'size' => 14],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
@@ -326,20 +331,20 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                 } else {
                     $sheet->setCellValue('A2', 'SEMUA DIVISI');
                 }
-                $sheet->mergeCells('A2:W2');
+                $sheet->mergeCells('A2:X2');
                 $sheet->getStyle('A2')->applyFromArray([
                     'font' => ['bold' => true, 'size' => 12],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                 ]);
 
                 $sheet->setCellValue('A3', 'Periode: ' . Carbon::parse($this->tanggalPeriode)->format('d F Y'));
-                $sheet->mergeCells('A3:W3');
+                $sheet->mergeCells('A3:X3');
                 $sheet->getStyle('A3')->applyFromArray([
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                 ]);
 
                 // Style untuk header kolom (row 5)
-                $headerRange = 'A5:W5';
+                $headerRange = 'A5:X5';
                 $sheet->getStyle($headerRange)->applyFromArray([
                     'font' => ['bold' => true, 'size' => 10],
                     'fill' => [
@@ -359,18 +364,18 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
 
                 // Style untuk data rows
                 $highestRow = $sheet->getHighestRow();
-                $dataRange = 'A5:W' . $highestRow;
+                $dataRange = 'A5:X' . $highestRow;
                 
                 // Set alignment untuk kolom numerik (right align)
-                // Format khusus untuk JM1, JM2, JM3 (1 desimal)
-                $jmColumns = ['H', 'I', 'J']; // JM1, JM2, JM3
+                // Format khusus untuk JM1–JM4 (1 desimal)
+                $jmColumns = ['H', 'I', 'J', 'K'];
                 foreach ($jmColumns as $col) {
                     $sheet->getStyle($col . '6:' . $col . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
                     $sheet->getStyle($col . '6:' . $col . $highestRow)->getNumberFormat()->setFormatCode('#,##0.0');
                 }
                 
                 // Format untuk kolom numerik lainnya (2 desimal)
-                $numericColumns = ['E', 'F', 'G', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W'];
+                $numericColumns = ['E', 'F', 'G', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'];
                 foreach ($numericColumns as $col) {
                     $sheet->getStyle($col . '6:' . $col . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
                     $sheet->getStyle($col . '6:' . $col . $highestRow)->getNumberFormat()->setFormatCode('#,##0.00');
@@ -393,29 +398,29 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                     if (is_string($cellC)) {
                         // Header Departemen
                         if (strpos($cellC, 'Dept.') === 0) {
-                            $sheet->getStyle('A' . $row . ':W' . $row)->applyFromArray([
+                            $sheet->getStyle('A' . $row . ':X' . $row)->applyFromArray([
                                 'font' => ['bold' => true],
                                 'fill' => [
                                     'fillType' => Fill::FILL_SOLID,
                                     'startColor' => ['rgb' => 'D0D0D0']
                                 ],
                             ]);
-                            $sheet->mergeCells('A' . $row . ':W' . $row);
+                            $sheet->mergeCells('A' . $row . ':X' . $row);
                         }
                         // Header Bagian
                         elseif (strpos($cellC, 'Bagia') === 0) {
-                            $sheet->getStyle('A' . $row . ':W' . $row)->applyFromArray([
+                            $sheet->getStyle('A' . $row . ':X' . $row)->applyFromArray([
                                 'font' => ['bold' => true],
                                 'fill' => [
                                     'fillType' => Fill::FILL_SOLID,
                                     'startColor' => ['rgb' => 'E0E0E0']
                                 ],
                             ]);
-                            $sheet->mergeCells('A' . $row . ':W' . $row);
+                            $sheet->mergeCells('A' . $row . ':X' . $row);
                         }
                         // Total Bagian
                         elseif (strpos($cellC, 'Total Bag.') === 0) {
-                            $sheet->getStyle('A' . $row . ':W' . $row)->applyFromArray([
+                            $sheet->getStyle('A' . $row . ':X' . $row)->applyFromArray([
                                 'font' => ['bold' => true],
                                 'fill' => [
                                     'fillType' => Fill::FILL_SOLID,
@@ -425,7 +430,7 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                         }
                         // Total Departemen
                         elseif (strpos($cellC, 'Total Dept.') === 0) {
-                            $sheet->getStyle('A' . $row . ':W' . $row)->applyFromArray([
+                            $sheet->getStyle('A' . $row . ':X' . $row)->applyFromArray([
                                 'font' => ['bold' => true],
                                 'fill' => [
                                     'fillType' => Fill::FILL_SOLID,
@@ -437,7 +442,7 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                 }
                 
                 // Style untuk Grand Total (last row)
-                $sheet->getStyle('A' . $highestRow . ':W' . $highestRow)->applyFromArray([
+                $sheet->getStyle('A' . $highestRow . ':X' . $highestRow)->applyFromArray([
                     'font' => ['bold' => true, 'size' => 11],
                     'fill' => [
                         'fillType' => Fill::FILL_SOLID,
@@ -446,7 +451,7 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                 ]);
 
                 // Add borders to all cells
-                $sheet->getStyle('A5:W' . $highestRow)->applyFromArray([
+                $sheet->getStyle('A5:X' . $highestRow)->applyFromArray([
                     'borders' => [
                         'allBorders' => [
                             'borderStyle' => Border::BORDER_THIN,
@@ -455,7 +460,7 @@ class RekapUpahFinanceVerExport implements FromCollection, WithHeadings, WithSty
                 ]);
 
                 // Auto-fit column widths (optional, bisa di-comment jika ingin manual)
-                // foreach (range('A', 'W') as $col) {
+                // foreach (range('A', 'X') as $col) {
                 //     $sheet->getColumnDimension($col)->setAutoSize(true);
                 // }
             },

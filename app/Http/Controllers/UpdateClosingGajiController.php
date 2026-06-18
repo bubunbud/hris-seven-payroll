@@ -17,16 +17,70 @@ class UpdateClosingGajiController extends Controller
     {
         $startDate = $request->get('periode_dari', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('periode_sampai', Carbon::now()->endOfMonth()->format('Y-m-d'));
+        
+        // Get filter parameters
+        $search = $request->get('search'); // NIK / Nama (gabungan)
+        // Backward compatibility: jika masih ada parameter nik, gunakan itu
         $nik = $request->get('nik');
+        if (!$search && $nik) {
+            $search = $nik;
+        }
+        
         $divisi = $request->get('divisi');
+
+        // Load karyawan aktif untuk autocomplete lokal
+        $karyawans = Karyawan::where('vcAktif', '1')
+            ->whereNull('Tgl_Berhenti')
+            ->with(['divisi', 'bagian'])
+            ->orderBy('Nama')
+            ->get(['Nik', 'Nama', 'Divisi', 'vcKodeBagian']);
+
+        // Siapkan data sederhana untuk frontend (hindari logic berat di Blade)
+        $karyawanList = $karyawans->map(function ($k) {
+            $divisiNama = '-';
+            if ($k->divisi && isset($k->divisi->vcNamaDivisi)) {
+                $divisiNama = $k->divisi->vcNamaDivisi;
+            } elseif ($k->Divisi) {
+                $divisiNama = $k->Divisi;
+            }
+
+            $bagianNama = '-';
+            if ($k->bagian && isset($k->bagian->vcNamaBagian)) {
+                $bagianNama = $k->bagian->vcNamaBagian;
+            }
+
+            return [
+                'nik' => $k->Nik ?: '',
+                'nama' => $k->Nama ?: '',
+                'divisi' => $divisiNama,
+                'bagian' => $bagianNama,
+                'search' => strtolower(($k->Nik ?: '') . ' ' . ($k->Nama ?: '')),
+            ];
+        })->values();
 
         $query = Closing::with(['karyawan', 'divisi', 'gapok'])
             ->whereBetween('periode', [$startDate, $endDate])
             ->orderBy('periode', 'desc')
             ->orderBy('vcNik');
 
-        if ($nik) {
-            $query->where('vcNik', 'like', '%' . $nik . '%');
+        // Apply search filter (multi-term support)
+        if ($search) {
+            $searchTerms = preg_split('/,\s*/', trim($search));
+            $query->where(function ($q) use ($searchTerms) {
+                foreach ($searchTerms as $term) {
+                    if (!empty(trim($term))) {
+                        $term = trim($term);
+                        // Jika format "NIK - Nama", ambil NIK saja
+                        if (strpos($term, ' - ') !== false) {
+                            $term = explode(' - ', $term)[0];
+                        }
+                        $q->orWhere('vcNik', 'like', '%' . $term . '%')
+                            ->orWhereHas('karyawan', function ($q2) use ($term) {
+                                $q2->where('Nama', 'like', '%' . $term . '%');
+                            });
+                    }
+                }
+            });
         }
 
         if ($divisi && $divisi != 'SEMUA') {
@@ -36,7 +90,7 @@ class UpdateClosingGajiController extends Controller
         $records = $query->paginate(25);
         $divisis = Divisi::orderBy('vcKodeDivisi')->get();
 
-        return view('proses.update-closing-gaji.index', compact('records', 'divisis', 'startDate', 'endDate', 'nik', 'divisi'));
+        return view('proses.update-closing-gaji.index', compact('records', 'divisis', 'startDate', 'endDate', 'search', 'divisi', 'karyawanList'));
     }
 
     public function store(Request $request)
@@ -65,6 +119,7 @@ class UpdateClosingGajiController extends Controller
             'decVarMakan' => 'nullable|numeric|min:0',
             'decVarTransport' => 'nullable|numeric|min:0',
             'decRapel' => 'nullable|numeric',
+            'decTunjanganJabatan' => 'nullable|numeric|min:0',
             'decUangMakan' => 'nullable|numeric|min:0',
             'decTransport' => 'nullable|numeric|min:0',
             'intMakan' => 'nullable|integer|min:0',
@@ -84,9 +139,11 @@ class UpdateClosingGajiController extends Controller
             'decJamLemburKerja1' => 'nullable|numeric|min:0',
             'decJamLemburKerja2' => 'nullable|numeric|min:0',
             'decJamLemburKerja3' => 'nullable|numeric|min:0',
+            'decJamLemburKerja4' => 'nullable|numeric|min:0',
             'decLemburKerja1' => 'nullable|numeric|min:0',
             'decLemburKerja2' => 'nullable|numeric|min:0',
             'decLemburKerja3' => 'nullable|numeric|min:0',
+            'decLemburKerja4' => 'nullable|numeric|min:0',
             'decJamLemburLibur2' => 'nullable|numeric|min:0',
             'decJamLemburLibur3' => 'nullable|numeric|min:0',
             'decLembur2' => 'nullable|numeric|min:0',
@@ -96,6 +153,7 @@ class UpdateClosingGajiController extends Controller
             'decTotallembur1' => 'nullable|numeric|min:0',
             'decTotallembur2' => 'nullable|numeric|min:0',
             'decTotallembur3' => 'nullable|numeric|min:0',
+            'decTotallembur4' => 'nullable|numeric|min:0',
             'intCutiLalu' => 'nullable|integer|min:0',
             'intSakitLalu' => 'nullable|integer|min:0',
             'intHcLalu' => 'nullable|integer|min:0',
@@ -183,6 +241,7 @@ class UpdateClosingGajiController extends Controller
             'decVarMakan',
             'decVarTransport',
             'decRapel',
+            'decTunjanganJabatan',
             'decUangMakan',
             'decTransport',
             'intMakan',
@@ -202,9 +261,11 @@ class UpdateClosingGajiController extends Controller
             'decJamLemburKerja1',
             'decJamLemburKerja2',
             'decJamLemburKerja3',
+            'decJamLemburKerja4',
             'decLemburKerja1',
             'decLemburKerja2',
             'decLemburKerja3',
+            'decLemburKerja4',
             'decJamLemburLibur2',
             'decJamLemburLibur3',
             'decLembur2',
@@ -214,6 +275,7 @@ class UpdateClosingGajiController extends Controller
             'decTotallembur1',
             'decTotallembur2',
             'decTotallembur3',
+            'decTotallembur4',
             'intCutiLalu',
             'intSakitLalu',
             'intHcLalu',
@@ -366,6 +428,7 @@ class UpdateClosingGajiController extends Controller
             'decVarMakan' => 'nullable|numeric|min:0',
             'decVarTransport' => 'nullable|numeric|min:0',
             'decRapel' => 'nullable|numeric',
+            'decTunjanganJabatan' => 'nullable|numeric|min:0',
             'decUangMakan' => 'nullable|numeric|min:0',
             'decTransport' => 'nullable|numeric|min:0',
             'intMakan' => 'nullable|integer|min:0',
@@ -385,9 +448,11 @@ class UpdateClosingGajiController extends Controller
             'decJamLemburKerja1' => 'nullable|numeric|min:0',
             'decJamLemburKerja2' => 'nullable|numeric|min:0',
             'decJamLemburKerja3' => 'nullable|numeric|min:0',
+            'decJamLemburKerja4' => 'nullable|numeric|min:0',
             'decLemburKerja1' => 'nullable|numeric|min:0',
             'decLemburKerja2' => 'nullable|numeric|min:0',
             'decLemburKerja3' => 'nullable|numeric|min:0',
+            'decLemburKerja4' => 'nullable|numeric|min:0',
             'decJamLemburLibur2' => 'nullable|numeric|min:0',
             'decJamLemburLibur3' => 'nullable|numeric|min:0',
             'decLembur2' => 'nullable|numeric|min:0',
@@ -397,6 +462,7 @@ class UpdateClosingGajiController extends Controller
             'decTotallembur1' => 'nullable|numeric|min:0',
             'decTotallembur2' => 'nullable|numeric|min:0',
             'decTotallembur3' => 'nullable|numeric|min:0',
+            'decTotallembur4' => 'nullable|numeric|min:0',
             'intCutiLalu' => 'nullable|integer|min:0',
             'intSakitLalu' => 'nullable|integer|min:0',
             'intHcLalu' => 'nullable|integer|min:0',
@@ -489,6 +555,7 @@ class UpdateClosingGajiController extends Controller
             'decVarMakan',
             'decVarTransport',
             'decRapel',
+            'decTunjanganJabatan',
             'decUangMakan',
             'decTransport',
             'intMakan',
@@ -508,9 +575,11 @@ class UpdateClosingGajiController extends Controller
             'decJamLemburKerja1',
             'decJamLemburKerja2',
             'decJamLemburKerja3',
+            'decJamLemburKerja4',
             'decLemburKerja1',
             'decLemburKerja2',
             'decLemburKerja3',
+            'decLemburKerja4',
             'decJamLemburLibur2',
             'decJamLemburLibur3',
             'decLembur2',
@@ -520,6 +589,7 @@ class UpdateClosingGajiController extends Controller
             'decTotallembur1',
             'decTotallembur2',
             'decTotallembur3',
+            'decTotallembur4',
             'intCutiLalu',
             'intSakitLalu',
             'intHcLalu',

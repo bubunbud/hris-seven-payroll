@@ -19,6 +19,7 @@ class Izin extends Model
         'dtTanggal',
         'vcNik',
         'vcKodeIzin',
+        'vcTipeIzin',
         'dtDari',
         'dtSampai',
         'vcKeterangan',

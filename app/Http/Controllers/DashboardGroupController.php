@@ -213,9 +213,10 @@ class DashboardGroupController extends Controller
                 COALESCE(decGapok, 0) + 
                 COALESCE(decUangMakan, 0) + 
                 COALESCE(decTransport, 0) + 
-                COALESCE(decTotallembur1, 0) + 
-                COALESCE(decTotallembur2, 0) + 
-                COALESCE(decTotallembur3, 0) - 
+                COALESCE(decTotallembur1, 0) +
+                COALESCE(decTotallembur2, 0) +
+                COALESCE(decTotallembur3, 0) +
+                COALESCE(decTotallembur4, 0) -
                 COALESCE(decPotonganHC, 0) - 
                 COALESCE(decPotonganBPR, 0) - 
                 COALESCE(decIuranSPN, 0) - 
@@ -235,9 +236,10 @@ class DashboardGroupController extends Controller
                 COALESCE(decGapok, 0) + 
                 COALESCE(decUangMakan, 0) + 
                 COALESCE(decTransport, 0) + 
-                COALESCE(decTotallembur1, 0) + 
-                COALESCE(decTotallembur2, 0) + 
-                COALESCE(decTotallembur3, 0) - 
+                COALESCE(decTotallembur1, 0) +
+                COALESCE(decTotallembur2, 0) +
+                COALESCE(decTotallembur3, 0) +
+                COALESCE(decTotallembur4, 0) -
                 COALESCE(decPotonganHC, 0) - 
                 COALESCE(decPotonganBPR, 0) - 
                 COALESCE(decIuranSPN, 0) - 
@@ -268,9 +270,10 @@ class DashboardGroupController extends Controller
                     COALESCE(decGapok, 0) + 
                     COALESCE(decUangMakan, 0) + 
                     COALESCE(decTransport, 0) + 
-                    COALESCE(decTotallembur1, 0) + 
-                    COALESCE(decTotallembur2, 0) + 
-                    COALESCE(decTotallembur3, 0) - 
+                COALESCE(decTotallembur1, 0) +
+                COALESCE(decTotallembur2, 0) +
+                COALESCE(decTotallembur3, 0) +
+                COALESCE(decTotallembur4, 0) -
                     COALESCE(decPotonganHC, 0) - 
                     COALESCE(decPotonganBPR, 0) - 
                     COALESCE(decIuranSPN, 0) - 

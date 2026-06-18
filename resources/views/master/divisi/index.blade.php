@@ -36,17 +36,20 @@
                         <table class="table table-hover mb-0" id="divisiTable">
                             <thead class="table-light">
                                 <tr>
-                                    <th width="5%">No</th>
-                                    <th width="15%">Kode Divisi</th>
-                                    <th width="30%">Nama Divisi</th>
-                                    <th width="8%" class="text-center">Sen</th>
-                                    <th width="8%" class="text-center">Sel</th>
-                                    <th width="8%" class="text-center">Rab</th>
-                                    <th width="8%" class="text-center">Kam</th>
-                                    <th width="8%" class="text-center">Jum</th>
-                                    <th width="8%" class="text-center">Sab</th>
-                                    <th width="8%" class="text-center">Mgg</th>
-                                    <th width="20%">Keterangan</th>
+                                    <th width="3%">No</th>
+                                    <th width="10%">Kode Divisi</th>
+                                    <th width="20%">Nama Divisi</th>
+                                    <th width="5%" class="text-center">Sen</th>
+                                    <th width="5%" class="text-center">Sel</th>
+                                    <th width="5%" class="text-center">Rab</th>
+                                    <th width="5%" class="text-center">Kam</th>
+                                    <th width="5%" class="text-center">Jum</th>
+                                    <th width="5%" class="text-center">Sab</th>
+                                    <th width="5%" class="text-center">Mgg</th>
+                                    <th width="12%">Keterangan</th>
+                                    <th width="10%">HR&GA Manager</th>
+                                    <th width="12%">Senior Finance Manager</th>
+                                    <th width="10%">GM Back Office</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -84,10 +87,13 @@
                                         <i class="fas fa-times text-danger {{ $divisi->vcMinggu ? 'd-none' : '' }}"></i>
                                     </td>
                                     <td>{{ $divisi->vcKeterangan ?? '-' }}</td>
+                                    <td><small>{{ $divisi->vcHrGaManager ?? '-' }}</small></td>
+                                    <td><small>{{ $divisi->vcSeniorFinanceManager ?? '-' }}</small></td>
+                                    <td><small>{{ $divisi->vcGmBackOffice ?? '-' }}</small></td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="11" class="text-center py-4">
+                                    <td colspan="14" class="text-center py-4">
                                         <i class="fas fa-inbox fa-2x text-muted mb-2"></i>
                                         <p class="text-muted mb-0">Tidak ada data divisi</p>
                                     </td>
@@ -234,6 +240,28 @@
                             </div>
                         </div>
                     </div>
+                    <hr>
+                    <h6 class="mb-3">Pengesahan</h6>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="vcHrGaManager" class="form-label">HR&GA Manager</label>
+                                <input type="text" class="form-control" id="vcHrGaManager" name="vcHrGaManager" placeholder="Nama HR&GA Manager">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="vcSeniorFinanceManager" class="form-label">Senior Finance Manager</label>
+                                <input type="text" class="form-control" id="vcSeniorFinanceManager" name="vcSeniorFinanceManager" placeholder="Nama Senior Finance Manager">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="vcGmBackOffice" class="form-label">GM Back Office</label>
+                                <input type="text" class="form-control" id="vcGmBackOffice" name="vcGmBackOffice" placeholder="Nama GM Back Office">
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
@@ -359,6 +387,28 @@
                             </div>
                         </div>
                     </div>
+                    <hr>
+                    <h6 class="mb-3">Pengesahan</h6>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="edit_vcHrGaManager" class="form-label">HR&GA Manager</label>
+                                <input type="text" class="form-control" id="edit_vcHrGaManager" name="vcHrGaManager" placeholder="Nama HR&GA Manager">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="edit_vcSeniorFinanceManager" class="form-label">Senior Finance Manager</label>
+                                <input type="text" class="form-control" id="edit_vcSeniorFinanceManager" name="vcSeniorFinanceManager" placeholder="Nama Senior Finance Manager">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="edit_vcGmBackOffice" class="form-label">GM Back Office</label>
+                                <input type="text" class="form-control" id="edit_vcGmBackOffice" name="vcGmBackOffice" placeholder="Nama GM Back Office">
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
@@ -422,6 +472,11 @@
                         document.getElementById('edit_vcKabag').value = data.vcKabag || '';
                         document.getElementById('edit_vPPIC').value = data.vPPIC || '';
                         document.getElementById('edit_vcPlantManager').value = data.vcPlantManager || '';
+                        
+                        // Set field pengesahan
+                        document.getElementById('edit_vcHrGaManager').value = data.vcHrGaManager || '';
+                        document.getElementById('edit_vcSeniorFinanceManager').value = data.vcSeniorFinanceManager || '';
+                        document.getElementById('edit_vcGmBackOffice').value = data.vcGmBackOffice || '';
 
                         // Show modal
                         new bootstrap.Modal(document.getElementById('editDivisiModal')).show();
@@ -504,33 +559,45 @@
             e.preventDefault();
 
             const formData = new FormData(this);
-            const data = Object.fromEntries(formData);
-
-            // Convert checkboxes to boolean
+            
+            // Convert checkboxes to 1 or 0
             const days = ['vcSenin', 'vcSelasa', 'vcRabu', 'vcKamis', 'vcJumat', 'vcSabtu', 'vcMinggu'];
             days.forEach(day => {
-                data[day] = formData.has(day) ? 1 : 0;
+                formData.set(day, formData.has(day) ? 1 : 0);
             });
 
+            // Add method spoofing for PUT
+            formData.append('_method', 'PUT');
+
             fetch(`/divisi/${selectedDivisiId}`, {
-                    method: 'PUT',
+                    method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                        'Content-Type': 'application/json'
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
                     },
-                    body: JSON.stringify(data)
+                    body: formData
                 })
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        return response.text().then(text => {
+                            console.error('Error response:', text);
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        });
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (data.success) {
+                        alert(data.message || 'Divisi berhasil diperbarui.');
                         location.reload();
                     } else {
-                        alert('Gagal mengupdate data');
+                        alert(data.message || 'Gagal mengupdate data');
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Terjadi kesalahan');
+                    alert('Terjadi kesalahan: ' + error.message);
                 });
         });
     });

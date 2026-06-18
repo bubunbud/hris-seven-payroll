@@ -151,3 +151,5 @@ Jika masih ada fitur yang hilang, silakan:
 **Versi:** 1.0  
 **Status:** Perbaikan sudah dilakukan, perlu verifikasi lebih lanjut
 
+
+

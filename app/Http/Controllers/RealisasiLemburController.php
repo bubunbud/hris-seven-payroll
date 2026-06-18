@@ -98,8 +98,8 @@ class RealisasiLemburController extends Controller
     public function update(Request $request, $tanggal, $nik)
     {
         $request->validate([
-            'dtJamMasukLembur' => ['nullable', 'string', 'regex:/^([01][0-9]|2[0-3]):[0-5][0-9]$/'],
-            'dtJamKeluarLembur' => ['nullable', 'string', 'regex:/^([01][0-9]|2[0-3]):[0-5][0-9]$/'],
+            'dtJamMasukLembur' => ['nullable', 'string', 'date_format:H:i'],
+            'dtJamKeluarLembur' => ['nullable', 'string', 'date_format:H:i'],
         ], [
             'dtJamMasukLembur.regex' => 'Format jam masuk lembur tidak valid (HH:MM)',
             'dtJamKeluarLembur.regex' => 'Format jam keluar lembur tidak valid (HH:MM)',

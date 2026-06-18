@@ -44,6 +44,7 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'Manage Roles', 'slug' => 'manage-roles', 'module' => 'settings', 'description' => 'Mengelola role'],
             ['name' => 'Manage Permissions', 'slug' => 'manage-permissions', 'module' => 'settings', 'description' => 'Mengelola permission'],
             ['name' => 'View Logs', 'slug' => 'view-logs', 'module' => 'settings', 'description' => 'Melihat activity logs'],
+            ['name' => 'View Login Activity', 'slug' => 'view-login-activity', 'module' => 'settings', 'description' => 'Melihat user yang sedang login dan riwayat login/logout'],
 
             // Dashboard Permissions
             ['name' => 'View Dashboard Group', 'slug' => 'view-dashboard-group', 'module' => 'dashboard', 'description' => 'Melihat Dashboard Level Group (Holding View)'],
@@ -103,10 +104,27 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'View Rekapitulasi Absen All', 'slug' => 'view-rekapitulasi-absen-all', 'module' => 'laporan', 'description' => 'Melihat Rekapitulasi Absen All'],
             ['name' => 'View Rekapitulasi Cuti', 'slug' => 'view-rekapitulasi-cuti', 'module' => 'laporan', 'description' => 'Melihat Rekapitulasi Cuti'],
 
+            // Absensi - Granular Permissions (Tambahan)
+            ['name' => 'View Perjalanan Dinas', 'slug' => 'view-perjalanan-dinas', 'module' => 'absensi', 'description' => 'Melihat Form Perjalanan Dinas'],
+            ['name' => 'View Biaya Perjalanan Dinas', 'slug' => 'view-biaya-perjalanan-dinas', 'module' => 'absensi', 'description' => 'Melihat Form Biaya Perjalanan Dinas (BPD)'],
+            ['name' => 'View Rekap Keterlambatan', 'slug' => 'view-rekap-keterlambatan', 'module' => 'absensi', 'description' => 'Melihat Rekap Absensi Keterlambatan'],
+
+            // Proses Payroll - Granular Permissions (Tambahan THR)
+            ['name' => 'View Periode THR', 'slug' => 'view-periode-thr', 'module' => 'proses-gaji', 'description' => 'Melihat Periode Closing THR'],
+            ['name' => 'View Closing THR', 'slug' => 'view-closing-thr', 'module' => 'proses-gaji', 'description' => 'Melihat Closing THR'],
+            ['name' => 'View List THR', 'slug' => 'view-list-thr', 'module' => 'proses-gaji', 'description' => 'Melihat List THR'],
+
+            // Laporan - Granular Permissions (Tambahan)
+            ['name' => 'View Laporan THR', 'slug' => 'view-laporan-thr', 'module' => 'laporan', 'description' => 'Melihat Laporan THR'],
+            ['name' => 'View Rekap Upah Finance Ver', 'slug' => 'view-rekap-upah-finance-ver', 'module' => 'laporan', 'description' => 'Melihat Rekap Upah Finance Ver'],
+
             // Settings - Granular Permissions
             ['name' => 'View Tarik Data Absensi', 'slug' => 'view-tarik-data-absensi', 'module' => 'settings', 'description' => 'Melihat Tarik Data Absensi'],
+            ['name' => 'View Tarik Data Absensi API', 'slug' => 'view-tarik-data-absensi-api', 'module' => 'settings', 'description' => 'Melihat Tarik Data Absensi dari API HRIS eksternal'],
             ['name' => 'View Tarik Data Izin', 'slug' => 'view-tarik-data-izin', 'module' => 'settings', 'description' => 'Melihat Tarik Data Izin'],
             ['name' => 'View Tarik Data Tidak Masuk', 'slug' => 'view-tarik-data-tidak-masuk', 'module' => 'settings', 'description' => 'Melihat Tarik Data Tidak Masuk'],
+            ['name' => 'View List Pengajuan Cuti API', 'slug' => 'view-list-pengajuan-cuti-api', 'module' => 'settings', 'description' => 'Melihat List Pengajuan Cuti dari API (feeder cuti)'],
+            ['name' => 'View List Pengajuan Izin API', 'slug' => 'view-list-pengajuan-izin-api', 'module' => 'settings', 'description' => 'Melihat List Pengajuan Izin dari API (feeder izin tidak masuk)'],
             ['name' => 'View Tarik Data Hutang Piutang', 'slug' => 'view-tarik-data-hutang-piutang', 'module' => 'settings', 'description' => 'Melihat Tarik Data Hutang Piutang'],
         ];
 

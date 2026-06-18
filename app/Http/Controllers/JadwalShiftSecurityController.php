@@ -15,12 +15,23 @@ use Carbon\Carbon;
 class JadwalShiftSecurityController extends Controller
 {
     /**
+     * Bulan dari form/URL sering string "01"–"09"; rule Laravel "integer" menolak leading zero (FILTER_VALIDATE_INT).
+     */
+    private function mergePeriodeInt(Request $request): void
+    {
+        $request->merge([
+            'bulan' => (int) $request->input('bulan'),
+            'tahun' => (int) $request->input('tahun'),
+        ]);
+    }
+
+    /**
      * Display form input jadwal shift security
      */
     public function index(Request $request)
     {
-        $bulan = $request->get('bulan', date('m'));
-        $tahun = $request->get('tahun', date('Y'));
+        $bulan = (int) $request->get('bulan', date('n'));
+        $tahun = (int) $request->get('tahun', date('Y'));
         $filterNama = $request->get('filter_nama', '');
 
         // Get all security employees dengan filter
@@ -303,6 +314,7 @@ class JadwalShiftSecurityController extends Controller
      */
     public function getJadwalByPeriode(Request $request)
     {
+        $this->mergePeriodeInt($request);
         $request->validate([
             'bulan' => 'required|integer|min:1|max:12',
             'tahun' => 'required|integer|min:2000|max:2100',
@@ -327,6 +339,7 @@ class JadwalShiftSecurityController extends Controller
      */
     public function copyFromPreviousMonth(Request $request)
     {
+        $this->mergePeriodeInt($request);
         $request->validate([
             'bulan' => 'required|integer|min:1|max:12',
             'tahun' => 'required|integer|min:2000|max:2100',
@@ -423,6 +436,7 @@ class JadwalShiftSecurityController extends Controller
      */
     public function importExcel(Request $request)
     {
+        $this->mergePeriodeInt($request);
         $request->validate([
             'file' => 'required|mimes:csv,txt,xlsx,xls|max:10240', // max 10MB
             'bulan' => 'required|integer|min:1|max:12',
@@ -662,10 +676,10 @@ class JadwalShiftSecurityController extends Controller
      */
     public function report(Request $request)
     {
-        $bulanAwal = $request->get('bulan_awal', date('m'));
-        $tahunAwal = $request->get('tahun_awal', date('Y'));
-        $bulanAkhir = $request->get('bulan_akhir', date('m'));
-        $tahunAkhir = $request->get('tahun_akhir', date('Y'));
+        $bulanAwal = (int) $request->get('bulan_awal', date('n'));
+        $tahunAwal = (int) $request->get('tahun_awal', date('Y'));
+        $bulanAkhir = (int) $request->get('bulan_akhir', date('n'));
+        $tahunAkhir = (int) $request->get('tahun_akhir', date('Y'));
         $filterNama = $request->get('filter_nama', '');
 
         $tanggalAwal = Carbon::create($tahunAwal, $bulanAwal, 1);

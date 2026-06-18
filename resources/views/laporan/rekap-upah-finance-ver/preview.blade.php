@@ -196,6 +196,7 @@
                     <th style="width: 3%;">JM1</th>
                     <th style="width: 3%;">JM2</th>
                     <th style="width: 3%;">JM3</th>
+                    <th style="width: 3%;">JM4</th>
                     <th style="width: 5%;">SELISIH UPAH</th>
                     <th style="width: 6%;">LEMBUR</th>
                     <th style="width: 6%;">Uang Makan + Transport</th>
@@ -220,13 +221,13 @@
                     @foreach($divisiData['departemens'] as $deptKode => $deptData)
                         <!-- Header Departemen -->
                         <tr class="bold" style="background-color: #d0d0d0;">
-                            <td colspan="23" class="text-left"><strong>Dept. {{ $deptData['nama'] }}</strong></td>
+                            <td colspan="24" class="text-left"><strong>Dept. {{ $deptData['nama'] }}</strong></td>
                         </tr>
                         @foreach($deptData['bagians'] as $bagianKode => $bagianData)
                             @if(count($bagianData['closings']) > 0)
                                 <!-- Header Bagian -->
                                 <tr class="bold" style="background-color: #e0e0e0;">
-                                    <td colspan="23" class="text-left"><strong>Bagia {{ $bagianData['nama'] }}</strong></td>
+                                    <td colspan="24" class="text-left"><strong>Bagia {{ $bagianData['nama'] }}</strong></td>
                                 </tr>
                                 @foreach($bagianData['closings'] as $closing)
                                     @php
@@ -237,16 +238,15 @@
                                     $premi = $closing->decPremi ?? 0;
                                     $gaji = $closing->decGapok ?? 0;
                                     $selisihUpah = $closing->decRapel ?? 0;
-                                    // JM1, JM2, JM3 mengikuti definisi:
-                                    // JM1 = jam ke-1 lembur hari kerja normal
-                                    // JM2 = jam ke-2 lembur hari kerja normal + jam ke-2 lembur hari libur
-                                    // JM3 = jam ke-3 lembur hari libur
-                                    $jm1 = $closing->decJamLemburKerja1 ?? 0;
-                                    $jm2 = ($closing->decJamLemburKerja2 ?? 0) + ($closing->decJamLemburLibur2 ?? 0);
-                                    $jm3 = $closing->decJamLemburLibur3 ?? 0;
+                                    $libur3 = (float)($closing->decJamLemburLibur3 ?? 0);
+                                    $jm1 = (float)($closing->decJamLemburKerja1 ?? 0);
+                                    $jm2 = (float)($closing->decJamLemburKerja2 ?? 0) + (float)($closing->decJamLemburLibur2 ?? 0);
+                                    $jm3 = (float)($closing->decJamLemburKerja3 ?? 0) + min(1.0, $libur3);
+                                    $jm4 = (float)($closing->decJamLemburKerja4 ?? 0) + max(0.0, $libur3 - 1.0);
                                     $lembur = ($closing->decTotallembur1 ?? 0) + 
                                               ($closing->decTotallembur2 ?? 0) + 
-                                              ($closing->decTotallembur3 ?? 0);
+                                              ($closing->decTotallembur3 ?? 0) +
+                                              ($closing->decTotallembur4 ?? 0);
                                     $uangMakanTransport = ($closing->decUangMakan ?? 0) + ($closing->decTransport ?? 0);
                                     
                                     // Gunakan decPotonganBPJS* karena field ini yang selalu terisi di database
@@ -277,6 +277,7 @@
                                         <td class="text-right">{{ number_format($jm1, 1, ',', '.') }}</td>
                                         <td class="text-right">{{ number_format($jm2, 1, ',', '.') }}</td>
                                         <td class="text-right">{{ number_format($jm3, 1, ',', '.') }}</td>
+                                        <td class="text-right">{{ number_format($jm4, 1, ',', '.') }}</td>
                                         <td class="text-right">{{ number_format($selisihUpah, 0, ',', '.') }}</td>
                                         <td class="text-right">{{ number_format($lembur, 0, ',', '.') }}</td>
                                         <td class="text-right">{{ number_format($uangMakanTransport, 0, ',', '.') }}</td>
@@ -305,6 +306,7 @@
                                     <td class="text-right">{{ number_format($bagianTotal['jm1'], 1, ',', '.') }}</td>
                                     <td class="text-right">{{ number_format($bagianTotal['jm2'], 1, ',', '.') }}</td>
                                     <td class="text-right">{{ number_format($bagianTotal['jm3'], 1, ',', '.') }}</td>
+                                    <td class="text-right">{{ number_format($bagianTotal['jm4'], 1, ',', '.') }}</td>
                                     <td class="text-right">{{ number_format($bagianTotal['selisih_upah'], 0, ',', '.') }}</td>
                                     <td class="text-right">{{ number_format($bagianTotal['lembur'], 0, ',', '.') }}</td>
                                     <td class="text-right">{{ number_format($bagianTotal['uang_makan_transport'], 0, ',', '.') }}</td>
@@ -334,6 +336,7 @@
                             <td class="text-right">{{ number_format($deptTotal['jm1'], 1, ',', '.') }}</td>
                             <td class="text-right">{{ number_format($deptTotal['jm2'], 1, ',', '.') }}</td>
                             <td class="text-right">{{ number_format($deptTotal['jm3'], 1, ',', '.') }}</td>
+                            <td class="text-right">{{ number_format($deptTotal['jm4'], 1, ',', '.') }}</td>
                             <td class="text-right">{{ number_format($deptTotal['selisih_upah'], 0, ',', '.') }}</td>
                             <td class="text-right">{{ number_format($deptTotal['lembur'], 0, ',', '.') }}</td>
                             <td class="text-right">{{ number_format($deptTotal['uang_makan_transport'], 0, ',', '.') }}</td>
@@ -360,6 +363,7 @@
                     <td class="text-right">{{ number_format($grandTotal['jm1'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['jm2'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['jm3'], 1, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($grandTotal['jm4'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['selisih_upah'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['lembur'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['uang_makan_transport'], 0, ',', '.') }}</td>

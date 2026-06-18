@@ -15,9 +15,40 @@ class HutangPiutangController extends Controller
     {
         $periodeAwal = $request->get('periode_awal', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $periodeAkhir = $request->get('periode_akhir', Carbon::now()->endOfMonth()->format('Y-m-d'));
-        $nik = $request->get('nik');
+        $search = $request->get('search');
+        $nikLegacy = $request->get('nik');
+        if (! $search && $nikLegacy) {
+            $search = $nikLegacy;
+        }
         $hutangPiutang = $request->get('hutang_piutang');
         $debitKredit = $request->get('debit_kredit');
+
+        $karyawans = Karyawan::where('vcAktif', '1')
+            ->whereNull('Tgl_Berhenti')
+            ->with(['divisi', 'bagian'])
+            ->orderBy('Nama')
+            ->get(['Nik', 'Nama', 'Divisi', 'vcKodeBagian']);
+
+        $karyawanList = $karyawans->map(function ($k) {
+            $divisiNama = '-';
+            if ($k->divisi && isset($k->divisi->vcNamaDivisi)) {
+                $divisiNama = $k->divisi->vcNamaDivisi;
+            } elseif ($k->Divisi) {
+                $divisiNama = $k->Divisi;
+            }
+            $bagianNama = '-';
+            if ($k->bagian && isset($k->bagian->vcNamaBagian)) {
+                $bagianNama = $k->bagian->vcNamaBagian;
+            }
+
+            return [
+                'nik' => $k->Nik ?: '',
+                'nama' => $k->Nama ?: '',
+                'divisi' => $divisiNama,
+                'bagian' => $bagianNama,
+                'search' => strtolower(($k->Nik ?: '').' '.($k->Nama ?: '')),
+            ];
+        })->values();
 
         // Query untuk data - filter berdasarkan overlap periode
         $query = HutangPiutang::with(['karyawan', 'masterHutangPiutang'])
@@ -36,8 +67,23 @@ class HutangPiutangController extends Controller
             })
             ->orderBy('dtCreate', 'desc');
 
-        if ($nik) {
-            $query->where('vcNik', 'like', '%' . $nik . '%');
+        if ($search) {
+            $searchTerms = preg_split('/,\s*/', trim($search));
+            $query->where(function ($q) use ($searchTerms) {
+                foreach ($searchTerms as $term) {
+                    $term = trim($term);
+                    if ($term === '') {
+                        continue;
+                    }
+                    if (strpos($term, ' - ') !== false) {
+                        $term = explode(' - ', $term)[0];
+                    }
+                    $q->orWhere('vcNik', 'like', '%'.$term.'%')
+                        ->orWhereHas('karyawan', function ($kq) use ($term) {
+                            $kq->where('Nama', 'like', '%'.$term.'%');
+                        });
+                }
+            });
         }
 
         if ($hutangPiutang) {
@@ -60,7 +106,8 @@ class HutangPiutangController extends Controller
             'masterHutangPiutangs',
             'periodeAwal',
             'periodeAkhir',
-            'nik',
+            'search',
+            'karyawanList',
             'hutangPiutang',
             'debitKredit'
         ));
@@ -79,7 +126,7 @@ class HutangPiutangController extends Controller
         $request->validate([
             'dtTanggalAwal' => 'required|date',
             'dtTanggalAkhir' => 'required|date|after_or_equal:dtTanggalAwal',
-            'vcNik' => 'required|string|max:10|exists:m_karyawan,Nik',
+            'vcNik' => 'required|string|max:24|exists:m_karyawan,Nik',
             'vcJenis' => 'required|string|max:5|exists:m_hutang_piutang,vcJenis',
             'vcFlag' => 'required|in:Debit,Kredit',
             'decAmount' => 'required|numeric|min:0',
@@ -175,7 +222,7 @@ class HutangPiutangController extends Controller
         $request->validate([
             'dtTanggalAwal' => 'required|date',
             'dtTanggalAkhir' => 'required|date|after_or_equal:dtTanggalAwal',
-            'vcNik' => 'required|string|max:10|exists:m_karyawan,Nik',
+            'vcNik' => 'required|string|max:24|exists:m_karyawan,Nik',
             'vcJenis' => 'required|string|max:5|exists:m_hutang_piutang,vcJenis',
             'vcFlag' => 'required|in:Debit,Kredit',
             'decAmount' => 'required|numeric|min:0',

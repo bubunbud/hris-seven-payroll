@@ -1,154 +1,286 @@
 @extends('layouts.app')
 
-@section('title', 'Dashboard - HRIS Seven Payroll')
+@section('title', 'Dashboard harian - HRIS Seven Payroll')
 
 @section('content')
 <div class="container-fluid">
     <div class="row">
         <div class="col-12">
             <h1 class="mb-4">
-                <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+                <i class="fas fa-calendar-day me-2"></i>Dashboard harian
             </h1>
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-3 mb-4">
-            <div class="card bg-primary text-white h-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex justify-content-between mb-auto">
-                        <div>
-                            <h4 class="card-title">Browse Absensi</h4>
-                            <p class="card-text">Lihat data absensi karyawan per periode</p>
-                        </div>
-                        <div class="align-self-center">
-                            <i class="fas fa-calendar-check fa-2x"></i>
-                        </div>
-                    </div>
-                    <a href="{{ route('absen.index') }}" class="btn btn-light btn-sm mt-2">
-                        <i class="fas fa-arrow-right me-1"></i>Buka
-                    </a>
+    <!-- 1. Data Karyawan yang Tidak Masuk Hari Ini -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-user-times me-2"></i>
+                        Data Karyawan yang Tidak Masuk Hari Ini
+                    </h5>
                 </div>
-            </div>
-        </div>
-
-        <div class="col-md-3 mb-4">
-            <div class="card bg-success text-white h-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex justify-content-between mb-auto">
-                        <div>
-                            <h4 class="card-title">Input Tidak Masuk</h4>
-                            <p class="card-text">Input data karyawan yang tidak masuk kerja</p>
+                <div class="card-body">
+                    @if($tidakMasukData->count() > 0)
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>No</th>
+                                        <th>NIK</th>
+                                        <th>Nama</th>
+                                        <th>Divisi</th>
+                                        <th>Bagian</th>
+                                        <th>Jenis</th>
+                                        <th>Periode</th>
+                                        <th>Keterangan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($tidakMasukData as $index => $tm)
+                                        <tr>
+                                            <td>{{ $tidakMasukData->firstItem() + $index }}</td>
+                                            <td>{{ $tm->vcNik }}</td>
+                                            <td>{{ $tm->Nama }}</td>
+                                            <td>{{ $tm->vcNamaDivisi ?? '-' }}</td>
+                                            <td>{{ $tm->vcNamaBagian ?? '-' }}</td>
+                                            <td>
+                                                <span class="badge bg-warning text-dark">
+                                                    {{ $tm->jenis_absen_keterangan ?? '-' }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                {{ \Carbon\Carbon::parse($tm->dtTanggalMulai)->format('d/m/Y') }} 
+                                                s/d 
+                                                {{ \Carbon\Carbon::parse($tm->dtTanggalSelesai)->format('d/m/Y') }}
+                                            </td>
+                                            <td>{{ $tm->vcKeterangan ?? '-' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
                         </div>
-                        <div class="align-self-center">
-                            <i class="fas fa-user-times fa-2x"></i>
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div>
+                                <p class="mb-0">
+                                    Menampilkan {{ $tidakMasukData->firstItem() }} - {{ $tidakMasukData->lastItem() }} 
+                                    dari {{ $tidakMasukData->total() }} data
+                                </p>
+                            </div>
+                            <div>
+                                {{ $tidakMasukData->links() }}
+                            </div>
                         </div>
-                    </div>
-                    <a href="{{ route('tidak-masuk.index') }}" class="btn btn-light btn-sm mt-2">
-                        <i class="fas fa-arrow-right me-1"></i>Buka
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-3 mb-4">
-            <div class="card bg-warning text-white h-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex justify-content-between mb-auto">
-                        <div>
-                            <h4 class="card-title">Izin Keluar Komplek</h4>
-                            <p class="card-text">Input izin keluar komplek karyawan</p>
+                    @else
+                        <div class="alert alert-success mb-0">
+                            <i class="fas fa-check-circle me-2"></i>Tidak ada karyawan yang tidak masuk hari ini.
                         </div>
-                        <div class="align-self-center">
-                            <i class="fas fa-sign-out-alt fa-2x"></i>
-                        </div>
-                    </div>
-                    <a href="{{ route('izin-keluar.index') }}" class="btn btn-light btn-sm mt-2">
-                        <i class="fas fa-arrow-right me-1"></i>Buka
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-3 mb-4">
-            <div class="card bg-info text-white h-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex justify-content-between mb-auto">
-                        <div>
-                            <h4 class="card-title">Saldo Cuti</h4>
-                            <p class="card-text">Kelola saldo cuti karyawan</p>
-                        </div>
-                        <div class="align-self-center">
-                            <i class="fas fa-calendar-alt fa-2x"></i>
-                        </div>
-                    </div>
-                    <a href="{{ route('saldo-cuti.index') }}" class="btn btn-light btn-sm mt-2">
-                        <i class="fas fa-arrow-right me-1"></i>Buka
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-3 mb-4">
-            <div class="card bg-danger text-white h-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex justify-content-between mb-auto">
-                        <div>
-                            <h4 class="card-title">Statistik Absensi</h4>
-                            <p class="card-text">Lihat statistik dan laporan absensi</p>
-                        </div>
-                        <div class="align-self-center">
-                            <i class="fas fa-chart-bar fa-2x"></i>
-                        </div>
-                    </div>
-                    <a href="{{ route('absensi.statistik.index') }}" class="btn btn-light btn-sm mt-2">
-                        <i class="fas fa-arrow-right me-1"></i>Buka
-                    </a>
+                    @endif
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="row mt-4">
+    <!-- 3. Data Karyawan yang Melakukan Izin Keluar Komplek Hari Ini -->
+    <div class="row mb-4">
         <div class="col-12">
             <div class="card">
-                <div class="card-header">
+                <div class="card-header bg-warning text-dark">
                     <h5 class="card-title mb-0">
-                        <i class="fas fa-info-circle me-2"></i>Selamat Datang di HRIS Seven Payroll
+                        <i class="fas fa-sign-out-alt me-2"></i>
+                        Data Karyawan yang Melakukan Izin Keluar Komplek Hari Ini
                     </h5>
                 </div>
                 <div class="card-body">
-                    <p class="card-text">
-                        Sistem Human Resources Information System (HRIS) Seven Payroll adalah aplikasi
-                        untuk mengelola data karyawan, absensi, dan penggajian dalam perusahaan.
-                        Gunakan menu navigasi di atas untuk mengakses berbagai fitur yang tersedia.
-                    </p>
-                    <div class="row mt-3">
-                        <div class="col-md-6">
-                            <h6><i class="fas fa-check-circle text-success me-2"></i>Fitur yang Tersedia:</h6>
-                            <ul class="list-unstyled">
-                                <li><i class="fas fa-angle-right me-2"></i>Manajemen Absensi</li>
-                                <li><i class="fas fa-angle-right me-2"></i>Manajemen Karyawan</li>
-                                <li><i class="fas fa-angle-right me-2"></i>Proses Penggajian</li>
-                                <li><i class="fas fa-angle-right me-2"></i>Laporan dan Statistik</li>
-                            </ul>
+                    @if($izinKeluarData->count() > 0)
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>No</th>
+                                        <th>NIK</th>
+                                        <th>Nama</th>
+                                        <th>Divisi</th>
+                                        <th>Bagian</th>
+                                        <th>Jenis Izin</th>
+                                        <th>Tipe Izin</th>
+                                        <th>Waktu</th>
+                                        <th>Keterangan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($izinKeluarData as $index => $izin)
+                                        <tr>
+                                            <td>{{ $izinKeluarData->firstItem() + $index }}</td>
+                                            <td>{{ $izin->vcNik }}</td>
+                                            <td>{{ $izin->Nama }}</td>
+                                            <td>{{ $izin->vcNamaDivisi ?? '-' }}</td>
+                                            <td>{{ $izin->vcNamaBagian ?? '-' }}</td>
+                                            <td>
+                                                <span class="badge bg-info">
+                                                    {{ $izin->jenis_izin_keterangan ?? '-' }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                @if($izin->vcTipeIzin)
+                                                    <span class="badge bg-secondary">{{ $izin->vcTipeIzin }}</span>
+                                                @else
+                                                    -
+                                                @endif
+                                            </td>
+                                            <td>
+                                                {{ $izin->dtDari ?? '-' }} 
+                                                @if($izin->dtSampai)
+                                                    - {{ $izin->dtSampai }}
+                                                @endif
+                                            </td>
+                                            <td>{{ $izin->vcKeterangan ?? '-' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
                         </div>
-                        <div class="col-md-6">
-                            <h6><i class="fas fa-cog text-primary me-2"></i>Teknologi:</h6>
-                            <ul class="list-unstyled">
-                                <li><i class="fas fa-angle-right me-2"></i>Laravel Framework</li>
-                                <li><i class="fas fa-angle-right me-2"></i>Bootstrap 5</li>
-                                <li><i class="fas fa-angle-right me-2"></i>Font Awesome Icons</li>
-                                <li><i class="fas fa-angle-right me-2"></i>MySQL Database</li>
-                            </ul>
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div>
+                                <p class="mb-0">
+                                    Menampilkan {{ $izinKeluarData->firstItem() }} - {{ $izinKeluarData->lastItem() }} 
+                                    dari {{ $izinKeluarData->total() }} data
+                                </p>
+                            </div>
+                            <div>
+                                {{ $izinKeluarData->links() }}
+                            </div>
                         </div>
-                    </div>
+                    @else
+                        <div class="alert alert-info mb-0">
+                            <i class="fas fa-info-circle me-2"></i>Tidak ada karyawan yang melakukan izin keluar komplek hari ini.
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Data Karyawan yang Tidak Ada Data Absensi (Finger Print) Hari Ini -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-fingerprint me-2"></i>
+                        Data Karyawan yang Tidak Ada Data Absensi (Finger Print) Hari Ini
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if($tidakAbsenData->count() > 0)
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>No</th>
+                                        <th>NIK</th>
+                                        <th>Nama</th>
+                                        <th>Divisi</th>
+                                        <th>Bagian</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($tidakAbsenData as $index => $karyawan)
+                                        <tr>
+                                            <td>{{ $tidakAbsenData->firstItem() + $index }}</td>
+                                            <td>{{ $karyawan->Nik }}</td>
+                                            <td>{{ $karyawan->Nama }}</td>
+                                            <td>{{ $karyawan->vcNamaDivisi ?? '-' }}</td>
+                                            <td>{{ $karyawan->vcNamaBagian ?? '-' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div>
+                                <p class="mb-0">
+                                    Menampilkan {{ $tidakAbsenData->firstItem() }} - {{ $tidakAbsenData->lastItem() }} 
+                                    dari {{ $tidakAbsenData->total() }} data
+                                </p>
+                            </div>
+                            <div>
+                                {{ $tidakAbsenData->links() }}
+                            </div>
+                        </div>
+                    @else
+                        <div class="alert alert-success mb-0">
+                            <i class="fas fa-check-circle me-2"></i>Semua karyawan sudah melakukan absensi hari ini.
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. Data Karyawan Absensi Hari Ini hingga 2 Hari Kebelakang -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-calendar-check me-2"></i>
+                        Data Karyawan Absensi (Hari Ini - 2 Hari Kebelakang)
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if($absenData->count() > 0)
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>No</th>
+                                        <th>Tanggal</th>
+                                        <th>NIK</th>
+                                        <th>Nama</th>
+                                        <th>Divisi</th>
+                                        <th>Bagian</th>
+                                        <th>Jam Masuk</th>
+                                        <th>Jam Keluar</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($absenData as $index => $absen)
+                                        <tr>
+                                            <td>{{ $absenData->firstItem() + $index }}</td>
+                                            <td>{{ \Carbon\Carbon::parse($absen->dtTanggal)->format('d/m/Y') }}</td>
+                                            <td>{{ $absen->vcNik }}</td>
+                                            <td>{{ $absen->Nama }}</td>
+                                            <td>{{ $absen->vcNamaDivisi ?? '-' }}</td>
+                                            <td>{{ $absen->vcNamaBagian ?? '-' }}</td>
+                                            <td>{{ $absen->dtJamMasuk ?? '-' }}</td>
+                                            <td>{{ $absen->dtJamKeluar ?? '-' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div>
+                                <p class="mb-0">
+                                    Menampilkan {{ $absenData->firstItem() }} - {{ $absenData->lastItem() }} 
+                                    dari {{ $absenData->total() }} data
+                                </p>
+                            </div>
+                            <div>
+                                {{ $absenData->links() }}
+                            </div>
+                        </div>
+                    @else
+                        <div class="alert alert-info mb-0">
+                            <i class="fas fa-info-circle me-2"></i>Tidak ada data absensi untuk periode ini.
+                        </div>
+                    @endif
                 </div>
             </div>
         </div>
     </div>
 </div>
 @endsection
-
-
-

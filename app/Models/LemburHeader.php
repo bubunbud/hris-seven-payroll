@@ -29,6 +29,7 @@ class LemburHeader extends Model
         'vcDiajukanOleh',
         'vcJabatanPengaju',
         'vcKepalaDept',
+        'is_free_role',
         'vcPenanggungBiaya',
         'vcPenanggungBiayaLainnya',
         'dtCreate',
@@ -40,6 +41,7 @@ class LemburHeader extends Model
         'decRencanaDurasiJam' => 'decimal:2',
         'dtRencanaDariPukul' => 'string',
         'dtRencanaSampaiPukul' => 'string',
+        'is_free_role' => 'boolean',
         'dtCreate' => 'datetime',
         'dtChange' => 'datetime',
     ];
@@ -50,10 +52,19 @@ class LemburHeader extends Model
         return $this->belongsTo(Departemen::class, 'vcKodeDept', 'vcKodeDept');
     }
 
-    // Relationship dengan Bagian
     public function bagian()
     {
         return $this->belongsTo(Bagian::class, 'vcKodeBagian', 'vcKodeBagian');
+    }
+
+    public function divisi()
+    {
+        return $this->belongsTo(Divisi::class, 'vcBusinessUnit', 'vcKodeDivisi');
+    }
+
+    public function pengaju()
+    {
+        return $this->belongsTo(Karyawan::class, 'vcDiajukanOleh', 'Nik');
     }
 
     // Relationship dengan Detail

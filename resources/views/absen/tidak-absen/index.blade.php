@@ -33,21 +33,19 @@
                                     <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                                 </div>
                             </div>
-                            <div class="col-md-2">
-                                <label for="nik" class="form-label">NIK</label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control" id="nik" name="nik"
-                                        value="{{ $nik }}" placeholder="Cari NIK">
-                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <div class="col-md-4">
+                                <label for="search" class="form-label">NIK / Nama</label>
+                                <div class="position-relative">
+                                    <input type="text"
+                                        class="form-control"
+                                        id="search"
+                                        name="search"
+                                        value="{{ $search ?? '' }}"
+                                        placeholder="Cari NIK atau Nama (pisahkan dengan koma)"
+                                        autocomplete="off">
+                                    <div id="searchAutocomplete" class="autocomplete-dropdown" style="display: none;"></div>
                                 </div>
-                            </div>
-                            <div class="col-md-2">
-                                <label for="nama" class="form-label">Nama</label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control" id="nama" name="nama"
-                                        value="{{ $nama }}" placeholder="Cari Nama">
-                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
-                                </div>
+                                <small class="text-muted">Ketik NIK atau nama karyawan untuk mencari (bisa multiple, pisahkan dengan koma)</small>
                             </div>
                             <div class="col-md-2">
                                 <label for="group" class="form-label">Group</label>
@@ -77,7 +75,7 @@
             <div class="alert alert-warning">
                 <i class="fas fa-info-circle me-2"></i>
                 <strong>Jumlah Data Alpha: {{ number_format($totalData) }}.</strong>
-                <small class="d-block mt-1">Menampilkan karyawan aktif yang tidak ada data absensi dan tidak ada data tidak masuk pada hari kerja normal.</small>
+                <small class="d-block mt-1">Menampilkan karyawan aktif yang tidak ada data absensi dan tidak ada data tidak masuk pada hari kerja normal. Karyawan dengan Group_pegawai=Management tidak ditampilkan.</small>
             </div>
 
             <!-- Data Table -->
@@ -91,12 +89,12 @@
                                     <th width="7%">NIK</th>
                                     <th width="15%">Nama</th>
                                     <th width="12%">Divisi</th>
+                                    <th width="12%">Departemen</th>
                                     <th width="12%">Bagian</th>
+                                    <th width="10%">Group Pegawai</th>
                                     <th width="8%">Jam Masuk</th>
                                     <th width="8%">Jam Pulang</th>
                                     <th width="7%">Total Jam</th>
-                                    <th width="8%">Shift Terjadwal</th>
-                                    <th width="8%">Shift Aktual</th>
                                     <th width="7%">Status</th>
                                 </tr>
                             </thead>
@@ -107,7 +105,9 @@
                                 $vcNik = $item['vcNik'] ?? '';
                                 $Nama = $item['Nama'] ?? 'N/A';
                                 $vcNamaDivisi = $item['vcNamaDivisi'] ?? 'N/A';
+                                $vcNamaDepartemen = $item['vcNamaDepartemen'] ?? 'N/A';
                                 $vcNamaBagian = $item['vcNamaBagian'] ?? 'N/A';
+                                $Group_pegawai = $item['Group_pegawai'] ?? 'N/A';
                                 $dtJamMasuk = $item['dtJamMasuk'] ?? null;
                                 $dtJamKeluar = $item['dtJamKeluar'] ?? null;
                                 $total_jam = $item['total_jam'] ?? 0;
@@ -131,14 +131,15 @@
                                         {{ $vcNamaDivisi }}
                                     </td>
                                     <td>
+                                        <i class="fas fa-sitemap text-success me-1"></i>
+                                        {{ $vcNamaDepartemen }}
+                                    </td>
+                                    <td>
                                         <i class="fas fa-sitemap text-warning me-1"></i>
                                         {{ $vcNamaBagian }}
                                     </td>
                                     <td>
-                                        <span class="text-muted">-</span>
-                                    </td>
-                                    <td>
-                                        <span class="text-muted">-</span>
+                                        <span class="badge bg-secondary">{{ $Group_pegawai }}</span>
                                     </td>
                                     <td>
                                         <span class="text-muted">-</span>
@@ -188,7 +189,7 @@
                     <div class="row">
                         <div class="col-md-12">
                             <span class="badge bg-danger me-2">Alpha</span>
-                            <span class="text-muted">Karyawan aktif yang tidak ada data absensi (jam masuk dan jam pulang) dan tidak ada data tidak masuk pada hari kerja normal.</span>
+                            <span class="text-muted">Karyawan aktif yang tidak ada data absensi (jam masuk dan jam pulang) dan tidak ada data tidak masuk pada hari kerja normal. Karyawan dengan Group_pegawai=Management tidak ditampilkan.</span>
                         </div>
                     </div>
                 </div>
@@ -199,8 +200,194 @@
 
 @endsection
 
+@push('styles')
+<style>
+    .autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #ced4da;
+        border-radius: 0.375rem;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        margin-top: 2px;
+    }
+
+    .autocomplete-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.2s;
+    }
+
+    .autocomplete-item:hover,
+    .autocomplete-item.active {
+        background-color: #f8f9fa;
+    }
+
+    .autocomplete-item:last-child {
+        border-bottom: none;
+    }
+
+    .autocomplete-item strong {
+        color: #0d6efd;
+    }
+
+    .autocomplete-item small {
+        color: #6c757d;
+        display: block;
+        margin-top: 0.25rem;
+    }
+</style>
+@endpush
+
 @push('scripts')
 <script>
+    let searchTimeout;
+    let selectedIndex = -1;
+    const searchInput = document.getElementById('search');
+    const autocompleteDiv = document.getElementById('searchAutocomplete');
+    // Data karyawan untuk pencarian lokal (dibatasi di controller)
+    const karyawanList = @json($karyawanList ?? []);
+
+    // Fungsi untuk mendapatkan nilai NIK dari input (handle format "NIK - Nama" atau multiple dengan koma)
+    function getCurrentSearchTerms() {
+        const value = searchInput.value.trim();
+        if (!value) return [];
+        return value.split(',').map(term => term.trim()).filter(term => term.length > 0);
+    }
+
+    // Fungsi untuk mendapatkan term yang sedang diketik (term terakhir)
+    function getCurrentTypingTerm() {
+        const value = searchInput.value.trim();
+        if (!value) return '';
+        const terms = value.split(',');
+        return terms[terms.length - 1].trim();
+    }
+
+    // Autocomplete search (pencarian lokal, tanpa fetch)
+    searchInput.addEventListener('input', function() {
+        const currentTerm = getCurrentTypingTerm().toLowerCase();
+
+        clearTimeout(searchTimeout);
+
+        if (currentTerm.length === 0) {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+            return;
+        }
+
+        if (currentTerm.length < 2) {
+            autocompleteDiv.style.display = 'none';
+            return;
+        }
+
+        // Debounce 200ms
+        searchTimeout = setTimeout(() => {
+            const results = karyawanList.filter(k => k.search.includes(currentTerm)).slice(0, 20);
+            displayAutocomplete(results);
+        }, 200);
+    });
+
+    // Display autocomplete results
+    function displayAutocomplete(karyawans) {
+        if (!karyawans || karyawans.length === 0) {
+            autocompleteDiv.innerHTML = '<div class="autocomplete-item">Tidak ada karyawan ditemukan</div>';
+            autocompleteDiv.style.display = 'block';
+            return;
+        }
+
+        autocompleteDiv.innerHTML = '';
+        karyawans.forEach((karyawan, index) => {
+            if (!karyawan || !karyawan.nik) return; // Skip invalid data
+
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.innerHTML = `
+                <strong>${karyawan.nik || ''}</strong> - ${karyawan.nama || ''}
+                <small>Divisi: ${karyawan.divisi || '-'} | Bagian: ${karyawan.bagian || '-'}</small>
+            `;
+            item.addEventListener('click', function() {
+                selectKaryawan(karyawan);
+            });
+            autocompleteDiv.appendChild(item);
+        });
+        autocompleteDiv.style.display = 'block';
+        selectedIndex = -1;
+    }
+
+    // Select karyawan from autocomplete
+    function selectKaryawan(karyawan) {
+        const currentTerms = getCurrentSearchTerms();
+        const currentTerm = getCurrentTypingTerm();
+
+        // Hapus term terakhir yang sedang diketik
+        currentTerms.pop();
+
+        // Tambahkan karyawan yang dipilih
+        const newTerm = `${karyawan.nik} - ${karyawan.nama}`;
+        currentTerms.push(newTerm);
+
+        // Update input value
+        searchInput.value = currentTerms.join(', ');
+        autocompleteDiv.style.display = 'none';
+        selectedIndex = -1;
+
+        // Focus kembali ke input
+        searchInput.focus();
+    }
+
+    // Hide autocomplete when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!searchInput.contains(e.target) && !autocompleteDiv.contains(e.target)) {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        }
+    });
+
+    // Handle keyboard navigation
+    searchInput.addEventListener('keydown', function(e) {
+        const items = autocompleteDiv.querySelectorAll('.autocomplete-item');
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (autocompleteDiv.style.display === 'none') return;
+            selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+            updateSelectedItem(items, selectedIndex);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (autocompleteDiv.style.display === 'none') return;
+            selectedIndex = Math.max(selectedIndex - 1, -1);
+            updateSelectedItem(items, selectedIndex);
+        } else if (e.key === 'Enter' && selectedIndex >= 0 && items[selectedIndex]) {
+            e.preventDefault();
+            items[selectedIndex].click();
+        } else if (e.key === 'Escape') {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        } else if (e.key === 'Tab') {
+            autocompleteDiv.style.display = 'none';
+            selectedIndex = -1;
+        }
+    });
+
+    function updateSelectedItem(items, index) {
+        items.forEach((item, i) => {
+            if (i === index) {
+                item.classList.add('active');
+                item.scrollIntoView({
+                    block: 'nearest'
+                });
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+
     // Auto-submit form on date change
     document.getElementById('dari_tanggal').addEventListener('change', function() {
         document.getElementById('filterForm').submit();

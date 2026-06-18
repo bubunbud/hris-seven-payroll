@@ -411,10 +411,8 @@ class RekapitulasiAbsensiController extends Controller
                     $tMasuk = $tanggal->copy()->setTimeFromTimeString($jamMasuk);
                     $tShiftMasuk = $tanggal->copy()->setTimeFromTimeString($shiftMasuk);
                     if ($tMasuk->greaterThan($tShiftMasuk)) {
-                        $selisih = $tShiftMasuk->diffInMinutes($tMasuk);
-                        if ($selisih > 1) {
+                        // Telat 1 menit sudah dianggap telat (tidak ada toleransi)
                             $terlambat++;
-                        }
                     }
                 }
             }

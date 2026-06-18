@@ -35,7 +35,7 @@ KETERANGAN KOLOM:
 
 3. Jenis (Kode Jenis Hutang/Piutang)
    - Kode yang ada di Master Hutang-Piutang
-   - Contoh: 0, 1, 2, 3, 4
+   - Contoh: 0, 1, 2, 3, 4, 5
    - WAJIB DIISI
    - Daftar Jenis:
      * 0 = Potongan Koperasi
@@ -43,6 +43,7 @@ KETERANGAN KOLOM:
      * 2 = Potongan SPN
      * 3 = Selisih Upah
      * 4 = Potongan Lain-lain
+     * 5 = Tunjangan Jabatan
 
 4. D/K (Debit/Kredit)
    - Nilai: "Debit", "Kredit", "0", "1", "d", atau "k" (case insensitive)

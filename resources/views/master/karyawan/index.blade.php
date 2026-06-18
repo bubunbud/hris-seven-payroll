@@ -43,6 +43,9 @@
                     <button type="button" class="btn btn-danger" id="deleteBtn" disabled>
                         <i class="fas fa-trash me-1"></i>Hapus
                     </button>
+                    <button type="button" class="btn btn-outline-secondary" id="printBiodataBtn" disabled title="Pratinjau &amp; cetak biodata (arsip CV)">
+                        <i class="fas fa-file-alt me-1"></i>Biodata Cetak
+                    </button>
                 </div>
             </div>
         </div>
@@ -86,8 +89,8 @@
                         <div class="row mb-4">
                             <div class="col-md-3">
                                 <div class="text-center">
-                                    <div class="border rounded p-4 mb-2 position-relative" id="photoPreview" style="width: 120px; height: 120px; margin: 0 auto; background-color: #f8f9fa; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                                        <img id="photoImage" src="" alt="Foto Karyawan" style="max-width: 100%; max-height: 100%; display: none; object-fit: cover;">
+                                    <div class="border rounded mb-2 position-relative" id="photoPreview" style="width: 120px; height: 150px; margin: 0 auto; background-color: #f8f9fa; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0;">
+                                        <img id="photoImage" src="" alt="Foto Karyawan" style="width: 100%; height: 100%; display: none; object-fit: contain;">
                                         <i class="fas fa-user fa-3x text-muted" id="photoIcon"></i>
                                     </div>
                                     <input type="file" id="photoInput" name="photo" accept="image/*" style="display: none;">
@@ -115,6 +118,11 @@
                                 </button>
                             </li>
                             <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="mutasi-tab" data-bs-toggle="tab" data-bs-target="#mutasi" type="button" role="tab">
+                                    Mutasi
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="pendidikan-tab" data-bs-toggle="tab" data-bs-target="#pendidikan" type="button" role="tab">
                                     Pendidikan
                                 </button>
@@ -122,6 +130,16 @@
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="keluarga-tab" data-bs-toggle="tab" data-bs-target="#keluarga" type="button" role="tab">
                                     Keluarga
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="pelatihan-tab" data-bs-toggle="tab" data-bs-target="#pelatihan" type="button" role="tab">
+                                    Pelatihan
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="catatan-karyawan-tab" data-bs-toggle="tab" data-bs-target="#catatan-karyawan" type="button" role="tab">
+                                    Catatan Karyawan
                                 </button>
                             </li>
                         </ul>
@@ -363,7 +381,9 @@
                                     <div class="col-md-6">
                                         <div class="mb-3">
                                             <label for="seksi" class="form-label">Seksi</label>
-                                            <input type="text" class="form-control" id="seksi" name="vcKodeSeksi" maxlength="25">
+                                            <select class="form-select" id="seksi" name="vcKodeSeksi" disabled>
+                                                <option value="">Pilih Bagian terlebih dahulu</option>
+                                            </select>
                                         </div>
                                     </div>
                                 </div>
@@ -451,6 +471,35 @@
                                 </div>
                             </div>
 
+                            <!-- Mutasi Tab -->
+                            <div class="tab-pane fade" id="mutasi" role="tabpanel">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h6 class="mb-0">Riwayat Mutasi</h6>
+                                    <button type="button" class="btn btn-primary btn-sm" id="addMutasiBtn">
+                                        <i class="fas fa-plus me-1"></i>Tambah Mutasi
+                                    </button>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-bordered" id="mutasiTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th width="10%">No. SK</th>
+                                                <th width="9%">Tgl SK</th>
+                                                <th width="11%">Divisi</th>
+                                                <th width="11%">Dept</th>
+                                                <th width="10%">Bagian</th>
+                                                <th width="10%">Seksi</th>
+                                                <th width="11%">Jabatan</th>
+                                                <th width="8%">Dok. SK</th>
+                                                <th width="10%">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="mutasiTableBody">
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
                             <!-- Pendidikan Tab -->
                             <div class="tab-pane fade" id="pendidikan" role="tabpanel">
                                 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -519,6 +568,68 @@
                                         </thead>
                                         <tbody id="familyTableBody">
                                             <!-- Family members will be added here dynamically -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Pelatihan Tab -->
+                            <div class="tab-pane fade" id="pelatihan" role="tabpanel">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h6 class="mb-0">Riwayat Pelatihan</h6>
+                                    <button type="button" class="btn btn-primary btn-sm" id="addPelatihanBtn">
+                                        <i class="fas fa-plus me-1"></i>Tambah Pelatihan
+                                    </button>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table table-bordered" id="pelatihanTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th width="22%">Nama Pelatihan</th>
+                                                <th width="15%">Penyelenggara</th>
+                                                <th width="15%">Lokasi</th>
+                                                <th width="10%">Tgl Pelatihan</th>
+                                                <th width="10%">Tgl Selesai</th>
+                                                <th width="8%">Sertifikat</th>
+                                                <th width="12%">Keterangan</th>
+                                                <th width="8%">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="pelatihanTableBody">
+                                            <!-- Pelatihan records will be added here dynamically -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Catatan Karyawan Tab (disiplin, penghargaan, catatan HR) -->
+                            <div class="tab-pane fade" id="catatan-karyawan" role="tabpanel">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <div>
+                                        <h6 class="mb-0">Riwayat Catatan Karyawan</h6>
+                                        <small class="text-muted">SP, teguran, penghargaan, dan catatan HR lainnya</small>
+                                    </div>
+                                    <button type="button" class="btn btn-primary btn-sm" id="addCatatanKaryawanBtn">
+                                        <i class="fas fa-plus me-1"></i>Tambah Catatan
+                                    </button>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-sm" id="catatanKaryawanTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Tanggal</th>
+                                                <th>Jenis</th>
+                                                <th>Kategori</th>
+                                                <th>Judul</th>
+                                                <th>Level</th>
+                                                <th>Status</th>
+                                                <th>No. Dokumen</th>
+                                                <th>File</th>
+                                                <th width="9%">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="catatanKaryawanTableBody">
                                         </tbody>
                                     </table>
                                 </div>
@@ -691,44 +802,337 @@
         </div>
     </div>
 </div>
+
+<!-- Modal Tambah Pelatihan -->
+<div class="modal fade" id="addPelatihanModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Tambah Pelatihan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addPelatihanForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="pelatihan_training_name" class="form-label">Nama Pelatihan <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="pelatihan_training_name" name="nm_pelatihan" maxlength="150" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="pelatihan_provider" class="form-label">Penyelenggara</label>
+                        <input type="text" class="form-control" id="pelatihan_provider" name="penyelenggara" maxlength="150">
+                    </div>
+                    <div class="mb-3">
+                        <label for="pelatihan_location" class="form-label">Lokasi</label>
+                        <input type="text" class="form-control" id="pelatihan_location" name="lokasi" maxlength="150">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="pelatihan_start_date" class="form-label">Tanggal Mulai</label>
+                                <input type="date" class="form-control" id="pelatihan_start_date" name="tg_pelatihan">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="pelatihan_end_date" class="form-label">Tanggal Selesai</label>
+                                <input type="date" class="form-control" id="pelatihan_end_date" name="tg_selesai">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="pelatihan_certificate" name="sertifikat" value="1">
+                        <label class="form-check-label" for="pelatihan_certificate">Memiliki Sertifikat</label>
+                    </div>
+                    <div class="mb-3">
+                        <label for="pelatihan_notes" class="form-label">Keterangan</label>
+                        <textarea class="form-control" id="pelatihan_notes" name="keterangan" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Tambah / Edit Catatan Karyawan -->
+<div class="modal fade" id="addCatatanKaryawanModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Tambah Catatan Karyawan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addCatatanKaryawanForm" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="ck_tanggal" class="form-label">Tanggal kejadian / dokumen</label>
+                                <input type="date" class="form-control" id="ck_tanggal" name="tanggal">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="ck_status" class="form-label">Status <span class="text-danger">*</span></label>
+                                <select class="form-select" id="ck_status" name="status" required>
+                                    <option value="Aktif">Aktif</option>
+                                    <option value="Selesai">Selesai</option>
+                                    <option value="Dibatalkan">Dibatalkan</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="ck_jenis" class="form-label">Jenis <span class="text-danger">*</span></label>
+                                <select class="form-select" id="ck_jenis" name="jenis" required>
+                                    <option value="SP">SP</option>
+                                    <option value="Teguran">Teguran</option>
+                                    <option value="Peringatan Lisan">Peringatan Lisan</option>
+                                    <option value="Penghargaan">Penghargaan</option>
+                                    <option value="Catatan">Catatan</option>
+                                    <option value="Pelanggaran">Pelanggaran</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="ck_kategori" class="form-label">Kategori <span class="text-danger">*</span></label>
+                                <select class="form-select" id="ck_kategori" name="kategori" required>
+                                    <option value="Disiplin">Disiplin</option>
+                                    <option value="Penghargaan">Penghargaan</option>
+                                    <option value="Informasi">Informasi</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="ck_judul" class="form-label">Judul <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="ck_judul" name="judul" maxlength="255" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="ck_deskripsi" class="form-label">Deskripsi</label>
+                        <textarea class="form-control" id="ck_deskripsi" name="deskripsi" rows="3"></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="ck_level" class="form-label">Level</label>
+                                <select class="form-select" id="ck_level" name="level">
+                                    <option value="Non-SP">Non-SP</option>
+                                    <option value="SP1">SP1</option>
+                                    <option value="SP2">SP2</option>
+                                    <option value="SP3">SP3</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="ck_no_dokumen" class="form-label">No. dokumen / surat</label>
+                                <input type="text" class="form-control" id="ck_no_dokumen" name="no_dokumen" maxlength="100">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="ck_tanggal_berlaku" class="form-label">Tanggal berlaku</label>
+                                <input type="date" class="form-control" id="ck_tanggal_berlaku" name="tanggal_berlaku">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="ck_tanggal_berakhir" class="form-label">Tanggal berakhir (khusus SP)</label>
+                                <input type="date" class="form-control" id="ck_tanggal_berakhir" name="tanggal_berakhir">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="ck_file_lampiran" class="form-label">Lampiran (PDF / JPG / PNG, maks. 5 MB)</label>
+                        <input type="file" class="form-control" id="ck_file_lampiran" name="file_lampiran" accept=".pdf,.jpg,.jpeg,.png">
+                        <div id="ck_file_existing_info" class="form-text mt-1"></div>
+                        <div class="form-check mt-2 d-none" id="ck_remove_file_wrap">
+                            <input class="form-check-input" type="checkbox" id="ck_remove_file" name="remove_file_lampiran" value="1">
+                            <label class="form-check-label text-danger" for="ck_remove_file">Hapus lampiran yang tersimpan</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Tambah / Edit Mutasi (t_mutasi: NoSK, vcTglSK, organisasi, vcJabatan, vcFileSK) -->
+<div class="modal fade" id="addMutasiModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Tambah Mutasi</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addMutasiForm" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="mutasi_no_sk" class="form-label">No. SK <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="mutasi_no_sk" name="no_sk" maxlength="20" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="mutasi_vc_tgl_sk" class="form-label">Tgl SK (vcTglSK)</label>
+                                <input type="date" class="form-control" id="mutasi_vc_tgl_sk" name="vc_tgl_sk">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="mutasi_vc_divisi" class="form-label">Divisi</label>
+                                <select class="form-select" id="mutasi_vc_divisi" name="vc_divisi">
+                                    <option value="">Pilih Divisi</option>
+                                    @foreach($divisis as $divisi)
+                                    <option value="{{ $divisi->vcKodeDivisi }}">{{ $divisi->vcNamaDivisi }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="mutasi_vc_dept" class="form-label">Departemen</label>
+                                <select class="form-select" id="mutasi_vc_dept" name="vc_dept" disabled>
+                                    <option value="">Pilih Divisi terlebih dahulu</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="mutasi_vcbagian" class="form-label">Bagian</label>
+                                <select class="form-select" id="mutasi_vcbagian" name="vcbagian" disabled>
+                                    <option value="">Pilih Departemen terlebih dahulu</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="mutasi_vc_seksi" class="form-label">Seksi</label>
+                                <select class="form-select" id="mutasi_vc_seksi" name="vc_seksi" disabled>
+                                    <option value="">Pilih Bagian terlebih dahulu</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="mb-3">
+                                <label for="mutasi_vc_jabatan" class="form-label">Jabatan</label>
+                                <select class="form-select" id="mutasi_vc_jabatan" name="vc_jabatan" disabled>
+                                    <option value="">Pilih Divisi terlebih dahulu</option>
+                                </select>
+                                <div class="form-text">Daftar mengikuti divisi (kode jabatan JRMA / JSIA / JSMU).</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="mutasi_dokumen_sk" class="form-label">Dokumen SK (PDF / JPG / PNG, maks. 5 MB)</label>
+                        <input type="file" class="form-control" id="mutasi_dokumen_sk" name="dokumen_sk" accept=".pdf,.jpg,.jpeg,.png">
+                        <div id="mutasi_sk_existing_info" class="form-text mt-1"></div>
+                        <div class="form-check mt-2 d-none" id="mutasi_remove_sk_wrap">
+                            <input class="form-check-input" type="checkbox" id="mutasi_remove_sk_file" name="remove_sk_file" value="1">
+                            <label class="form-check-label text-danger" for="mutasi_remove_sk_file">Hapus dokumen SK yang tersimpan</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 @endsection
 
 @push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Base path untuk subfolder support
+        // Extract path dari URL (exclude domain dan port)
+        // Contoh: 'http://localhost:8000' -> '', 'http://192.168.10.40/hris-seven-payroll' -> '/hris-seven-payroll'
+        const fullUrl = '{{ url("/") }}';
+        // Regex: hapus protocol (http:// atau https://) dan domain:port, sisakan path saja
+        const basePath = fullUrl.replace(/^https?:\/\/[^\/]+/, '') || '';
+
+        // Helper function untuk membuat URL dengan basePath
+        function makeUrl(path) {
+            // Hapus leading slash dari path jika ada
+            const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+            // Jika basePath kosong (localhost), gunakan path relatif dengan leading slash
+            // Jika basePath ada (subfolder), gabungkan dengan basePath
+            if (!basePath) {
+                return `/${cleanPath}`;
+            }
+            // Pastikan basePath tidak double slash
+            const cleanBasePath = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
+            return `${cleanBasePath}/${cleanPath}`;
+        }
+
         let currentNik = null;
         let isEditMode = false;
         let familyMembers = [];
         let pendidikanMembers = [];
+        let pelatihanMembers = [];
+        let mutasiMembers = [];
+        let catatanMembers = [];
         let currentFamilyEditIndex = null;
         let currentPendidikanEditIndex = null;
+        let currentPelatihanEditIndex = null;
+        let currentMutasiEditIndex = null;
+        let currentCatatanEditIndex = null;
 
         // Hierarchical dropdown elements
         const divisiSelect = document.getElementById('divisi');
         const departemenSelect = document.getElementById('departemen');
         const bagianSelect = document.getElementById('bagian');
+        const jabatanSelect = document.getElementById('jabatan');
+        
+        // Store initial jabatans for reset functionality
+        const initialJabatans = Array.from(jabatanSelect.options).map(opt => ({
+            value: opt.value,
+            text: opt.text
+        }));
 
         // Modal instances
         const familyModalEl = document.getElementById('addFamilyModal');
         const pendidikanModalEl = document.getElementById('addPendidikanModal');
+        const pelatihanModalEl = document.getElementById('addPelatihanModal');
+        const mutasiModalEl = document.getElementById('addMutasiModal');
         const familyModal = familyModalEl ? new bootstrap.Modal(familyModalEl) : null;
         const pendidikanModal = pendidikanModalEl ? new bootstrap.Modal(pendidikanModalEl) : null;
+        const pelatihanModal = pelatihanModalEl ? new bootstrap.Modal(pelatihanModalEl) : null;
+        const mutasiModal = mutasiModalEl ? new bootstrap.Modal(mutasiModalEl) : null;
+        const catatanModalEl = document.getElementById('addCatatanKaryawanModal');
+        const catatanModal = catatanModalEl ? new bootstrap.Modal(catatanModalEl) : null;
 
-        function resetFamilyModalState() {
-            currentFamilyEditIndex = null;
-            const modalTitle = familyModalEl?.querySelector('.modal-title');
-            const submitBtn = document.querySelector('#addFamilyForm button[type="submit"]');
-            if (modalTitle) modalTitle.textContent = 'Tambah Anggota Keluarga';
-            if (submitBtn) submitBtn.textContent = 'Simpan';
-        }
-
-        function resetPendidikanModalState() {
-            currentPendidikanEditIndex = null;
-            const modalTitle = pendidikanModalEl?.querySelector('.modal-title');
-            const submitBtn = document.querySelector('#addPendidikanForm button[type="submit"]');
-            if (modalTitle) modalTitle.textContent = 'Tambah Riwayat Pendidikan';
-            if (submitBtn) submitBtn.textContent = 'Simpan';
-        }
+        const mutasiDivisiSelect = document.getElementById('mutasi_vc_divisi');
+        const mutasiDepartemenSelect = document.getElementById('mutasi_vc_dept');
+        const mutasiBagianSelect = document.getElementById('mutasi_vcbagian');
+        const mutasiJabatanSelect = document.getElementById('mutasi_vc_jabatan');
+        const mutasiSeksiSelect = document.getElementById('mutasi_vc_seksi');
+        const MUTASI_DIVISI_LABELS = @json($divisis->pluck('vcNamaDivisi', 'vcKodeDivisi'));
+        const MUTASI_JABATAN_LABELS = @json($jabatans->pluck('vcNamaJabatan', 'vcKodeJabatan'));
+        const MUTASI_SEKSI_LABELS = @json(\App\Models\Seksi::query()->orderBy('vcKodeseksi')->pluck('vcNamaseksi', 'vcKodeseksi'));
 
         function formatDateForInput(value) {
             if (!value) return '';
@@ -746,6 +1150,823 @@
                 return value.substring(0, 10);
             }
             return '';
+        }
+
+        function resetFamilyModalState() {
+            currentFamilyEditIndex = null;
+            const modalTitle = familyModalEl?.querySelector('.modal-title');
+            const submitBtn = document.querySelector('#addFamilyForm button[type="submit"]');
+            if (modalTitle) modalTitle.textContent = 'Tambah Anggota Keluarga';
+            if (submitBtn) submitBtn.textContent = 'Simpan';
+        }
+
+        function resetPendidikanModalState() {
+            currentPendidikanEditIndex = null;
+            const modalTitle = pendidikanModalEl?.querySelector('.modal-title');
+            const submitBtn = document.querySelector('#addPendidikanForm button[type="submit"]');
+            if (modalTitle) modalTitle.textContent = 'Tambah Riwayat Pendidikan';
+            if (submitBtn) submitBtn.textContent = 'Simpan';
+        }
+
+        function resetPelatihanModalState() {
+            currentPelatihanEditIndex = null;
+            const modalTitle = pelatihanModalEl?.querySelector('.modal-title');
+            const submitBtn = document.querySelector('#addPelatihanForm button[type="submit"]');
+            if (modalTitle) modalTitle.textContent = 'Tambah Pelatihan';
+            if (submitBtn) submitBtn.textContent = 'Simpan';
+        }
+
+        function resetMutasiOrganisasiDropdowns() {
+            if (mutasiDepartemenSelect && mutasiBagianSelect) {
+                mutasiDepartemenSelect.innerHTML = '<option value="">Pilih Divisi terlebih dahulu</option>';
+                mutasiDepartemenSelect.disabled = true;
+                mutasiBagianSelect.innerHTML = '<option value="">Pilih Departemen terlebih dahulu</option>';
+                mutasiBagianSelect.disabled = true;
+            }
+            if (mutasiJabatanSelect) {
+                mutasiJabatanSelect.innerHTML = '<option value="">Pilih Divisi terlebih dahulu</option>';
+                mutasiJabatanSelect.disabled = true;
+            }
+            if (mutasiSeksiSelect) {
+                mutasiSeksiSelect.innerHTML = '<option value="">Pilih Bagian terlebih dahulu</option>';
+                mutasiSeksiSelect.disabled = true;
+            }
+        }
+
+        /** Setelah enableForm() mengaktifkan semua select di halaman, kembalikan aturan hirarki modal mutasi. */
+        function syncMutasiOrganisasiFieldsEnabled() {
+            if (!mutasiDivisiSelect) return;
+            const hasDiv = !!mutasiDivisiSelect.value;
+            const hasDept = mutasiDepartemenSelect && !!mutasiDepartemenSelect.value;
+            const hasBag = mutasiBagianSelect && !!mutasiBagianSelect.value;
+            if (mutasiDepartemenSelect) mutasiDepartemenSelect.disabled = !hasDiv;
+            if (mutasiBagianSelect) mutasiBagianSelect.disabled = !(hasDiv && hasDept);
+            if (mutasiSeksiSelect) mutasiSeksiSelect.disabled = !(hasDiv && hasDept && hasBag);
+            if (mutasiJabatanSelect) mutasiJabatanSelect.disabled = !hasDiv;
+        }
+
+        function ensureMutasiSelectOption(select, value, label) {
+            if (!select || value === null || value === undefined || String(value).trim() === '') return;
+            const v = String(value);
+            const exists = Array.from(select.options).some(o => o.value === v);
+            if (!exists) {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = label || (v + ' (data lama)');
+                select.appendChild(opt);
+            }
+        }
+
+        function loadMutasiDepartemens(divisiKode, callback) {
+            if (!mutasiDepartemenSelect) return;
+            mutasiDepartemenSelect.disabled = true;
+            mutasiDepartemenSelect.innerHTML = '<option value="">Memuat...</option>';
+
+            fetch(makeUrl('karyawan/get-departemens'), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ divisi: divisiKode })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        mutasiDepartemenSelect.innerHTML = '<option value="">Pilih Departemen</option>';
+                        data.departemens.forEach(dept => {
+                            const option = document.createElement('option');
+                            option.value = dept.vcKodeDept;
+                            option.textContent = dept.vcKodeDept + ' - ' + dept.vcNamaDept;
+                            mutasiDepartemenSelect.appendChild(option);
+                        });
+                        mutasiDepartemenSelect.disabled = false;
+                    } else {
+                        mutasiDepartemenSelect.innerHTML = '<option value="">Tidak ada data</option>';
+                        mutasiDepartemenSelect.disabled = true;
+                    }
+                    if (callback) callback();
+                })
+                .catch(error => {
+                    console.error('Error loading mutasi departemens:', error);
+                    mutasiDepartemenSelect.innerHTML = '<option value="">Error memuat data</option>';
+                    mutasiDepartemenSelect.disabled = true;
+                    if (callback) callback();
+                });
+        }
+
+        function loadMutasiBagians(divisiKode, deptKode, callback) {
+            if (!mutasiBagianSelect) return;
+            mutasiBagianSelect.disabled = true;
+            mutasiBagianSelect.innerHTML = '<option value="">Memuat...</option>';
+
+            fetch(makeUrl('karyawan/get-bagians'), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ divisi: divisiKode, departemen: deptKode })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        mutasiBagianSelect.innerHTML = '<option value="">Pilih Bagian</option>';
+                        data.bagians.forEach(bagian => {
+                            const option = document.createElement('option');
+                            option.value = bagian.vcKodeBagian;
+                            option.textContent = bagian.vcKodeBagian + ' - ' + bagian.vcNamaBagian;
+                            mutasiBagianSelect.appendChild(option);
+                        });
+                        mutasiBagianSelect.disabled = false;
+                    } else {
+                        mutasiBagianSelect.innerHTML = '<option value="">Tidak ada data</option>';
+                        mutasiBagianSelect.disabled = true;
+                    }
+                    if (callback) callback();
+                })
+                .catch(error => {
+                    console.error('Error loading mutasi bagians:', error);
+                    mutasiBagianSelect.innerHTML = '<option value="">Error memuat data</option>';
+                    mutasiBagianSelect.disabled = true;
+                    if (callback) callback();
+                });
+        }
+
+        function loadMutasiSeksis(divisiKode, deptKode, bagianKode, callback) {
+            if (!mutasiSeksiSelect) return;
+            mutasiSeksiSelect.disabled = true;
+            mutasiSeksiSelect.innerHTML = '<option value="">Memuat...</option>';
+
+            fetch(makeUrl('karyawan/get-seksis'), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        divisi: divisiKode,
+                        departemen: deptKode,
+                        bagian: bagianKode
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        mutasiSeksiSelect.innerHTML = '<option value="">Pilih Seksi</option>';
+                        data.seksis.forEach(seksi => {
+                            const option = document.createElement('option');
+                            option.value = seksi.vcKodeSeksi;
+                            option.textContent = seksi.vcKodeSeksi + ' - ' + seksi.vcNamaSeksi;
+                            mutasiSeksiSelect.appendChild(option);
+                        });
+                        mutasiSeksiSelect.disabled = false;
+                    } else {
+                        mutasiSeksiSelect.innerHTML = '<option value="">Tidak ada data</option>';
+                        mutasiSeksiSelect.disabled = true;
+                    }
+                    if (callback) callback();
+                })
+                .catch(error => {
+                    console.error('Error loading mutasi seksis:', error);
+                    mutasiSeksiSelect.innerHTML = '<option value="">Error memuat data</option>';
+                    mutasiSeksiSelect.disabled = true;
+                    if (callback) callback();
+                });
+        }
+
+        function loadMutasiJabatans(divisiKode, callback) {
+            if (!mutasiJabatanSelect) return;
+            mutasiJabatanSelect.disabled = true;
+            mutasiJabatanSelect.innerHTML = '<option value="">Memuat...</option>';
+
+            fetch(makeUrl('karyawan/get-jabatans'), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ divisi: divisiKode })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        mutasiJabatanSelect.innerHTML = '<option value="">Pilih Jabatan</option>';
+                        data.jabatans.forEach(j => {
+                            const option = document.createElement('option');
+                            option.value = j.vcKodeJabatan;
+                            option.textContent = j.vcKodeJabatan + ' - ' + j.vcNamaJabatan;
+                            mutasiJabatanSelect.appendChild(option);
+                        });
+                        mutasiJabatanSelect.disabled = false;
+                    } else {
+                        mutasiJabatanSelect.innerHTML = '<option value="">Tidak ada data</option>';
+                        mutasiJabatanSelect.disabled = true;
+                    }
+                    if (callback) callback();
+                })
+                .catch(error => {
+                    console.error('Error loading mutasi jabatans:', error);
+                    mutasiJabatanSelect.innerHTML = '<option value="">Error memuat data</option>';
+                    mutasiJabatanSelect.disabled = true;
+                    if (callback) callback();
+                });
+        }
+
+        function resetMutasiModalState() {
+            currentMutasiEditIndex = null;
+            const modalTitle = mutasiModalEl?.querySelector('.modal-title');
+            const submitBtn = document.querySelector('#addMutasiForm button[type="submit"]');
+            if (modalTitle) modalTitle.textContent = 'Tambah Mutasi';
+            if (submitBtn) submitBtn.textContent = 'Simpan';
+            const skInfo = document.getElementById('mutasi_sk_existing_info');
+            if (skInfo) skInfo.innerHTML = '';
+            const removeWrap = document.getElementById('mutasi_remove_sk_wrap');
+            if (removeWrap) removeWrap.classList.add('d-none');
+            const removeCb = document.getElementById('mutasi_remove_sk_file');
+            if (removeCb) removeCb.checked = false;
+            resetMutasiOrganisasiDropdowns();
+        }
+
+        function normalizeMutasiRow(m) {
+            const noSk = m.NoSK ?? m.no_sk ?? '';
+            return {
+                no_sk: noSk,
+                original_no_sk: noSk,
+                vc_tgl_sk: formatDateForInput(m.vcTglSK ?? m.vc_tgl_sk),
+                vc_divisi: m.vcDivisi ?? m.vc_divisi ?? '',
+                vc_dept: m.vcDept ?? m.vc_dept ?? '',
+                vcbagian: m.vcbagian ?? '',
+                vc_seksi: m.vcSeksi ?? m.vc_seksi ?? '',
+                vc_jabatan: m.vcJabatan ?? m.vc_jabatan ?? '',
+                vc_file_sk: m.vcFileSK ?? m.vc_file_sk ?? '',
+                sk_file_url: m.sk_file_url || null,
+            };
+        }
+
+        function updateMutasiTable() {
+            const tbody = document.getElementById('mutasiTableBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (!mutasiMembers.length) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="9" class="text-center text-muted">Belum ada data mutasi.</td>`;
+                tbody.appendChild(tr);
+                return;
+            }
+
+            mutasiMembers.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                const skLink = item.sk_file_url
+                    ? `<a href="${item.sk_file_url}" target="_blank" rel="noopener">Unduh</a>`
+                    : '—';
+                const divLabel = (item.vc_divisi && MUTASI_DIVISI_LABELS[item.vc_divisi]) ? MUTASI_DIVISI_LABELS[item.vc_divisi] : (item.vc_divisi || '—');
+                const jabLabel = (item.vc_jabatan && MUTASI_JABATAN_LABELS[item.vc_jabatan]) ? MUTASI_JABATAN_LABELS[item.vc_jabatan] : (item.vc_jabatan || '—');
+                const sekLabel = (item.vc_seksi && MUTASI_SEKSI_LABELS[item.vc_seksi]) ? MUTASI_SEKSI_LABELS[item.vc_seksi] : (item.vc_seksi || '—');
+                tr.innerHTML = `
+                    <td>${item.no_sk || '-'}</td>
+                    <td>${item.vc_tgl_sk || '-'}</td>
+                    <td>${divLabel}</td>
+                    <td>${item.vc_dept || '-'}</td>
+                    <td>${item.vcbagian || '-'}</td>
+                    <td>${sekLabel}</td>
+                    <td>${jabLabel}</td>
+                    <td class="text-center">${skLink}</td>
+                    <td class="text-center">
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="#" onclick="editMutasiMember(${index}); return false;"><i class="fas fa-edit me-2"></i>Edit</a></li>
+                                <li><a class="dropdown-item text-danger" href="#" onclick="removeMutasiMember(${index}); return false;"><i class="fas fa-trash me-2"></i>Hapus</a></li>
+                            </ul>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function loadMutasiData(nik) {
+            if (!nik) {
+                mutasiMembers = [];
+                updateMutasiTable();
+                return;
+            }
+            fetch(makeUrl(`karyawan/${nik}/mutasi`), {
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        mutasiMembers = (data.mutasi || []).map(normalizeMutasiRow);
+                        updateMutasiTable();
+                    } else {
+                        mutasiMembers = [];
+                        updateMutasiTable();
+                    }
+                })
+                .catch(err => {
+                    console.error('Error loading mutasi:', err);
+                    mutasiMembers = [];
+                    updateMutasiTable();
+                });
+        }
+
+        function removeMutasiMember(index) {
+            const row = mutasiMembers[index];
+            if (!row || !currentNik) {
+                if (row) mutasiMembers.splice(index, 1);
+                updateMutasiTable();
+                return;
+            }
+
+            if (!row.original_no_sk && !row.no_sk) {
+                mutasiMembers.splice(index, 1);
+                updateMutasiTable();
+                return;
+            }
+
+            if (!confirm('Hapus data mutasi ini?')) return;
+
+            const sk = encodeURIComponent(row.original_no_sk || row.no_sk);
+            fetch(makeUrl(`karyawan/${currentNik}/mutasi/${sk}`), {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        mutasiMembers.splice(index, 1);
+                        updateMutasiTable();
+                    } else {
+                        alert('Gagal menghapus data mutasi: ' + (data.message || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting mutasi:', error);
+                    alert('Gagal menghapus data mutasi. Silakan coba lagi.');
+                });
+        }
+
+        function editMutasiMember(index) {
+            const row = mutasiMembers[index];
+            if (!row) return;
+            currentMutasiEditIndex = index;
+            const form = document.getElementById('addMutasiForm');
+            form.no_sk.value = row.no_sk || '';
+            form.vc_tgl_sk.value = row.vc_tgl_sk || '';
+            const divVal = row.vc_divisi || '';
+            const deptVal = row.vc_dept || '';
+            const bagVal = row.vcbagian || '';
+            const sekVal = row.vc_seksi || '';
+            const jabVal = row.vc_jabatan || '';
+            if (mutasiDivisiSelect) {
+                ensureMutasiSelectOption(mutasiDivisiSelect, divVal, divVal);
+                mutasiDivisiSelect.value = divVal;
+            }
+            if (!divVal) {
+                resetMutasiOrganisasiDropdowns();
+            } else {
+                loadMutasiJabatans(divVal, () => {
+                    ensureMutasiSelectOption(mutasiJabatanSelect, jabVal, jabVal);
+                    if (mutasiJabatanSelect) mutasiJabatanSelect.value = jabVal || '';
+                });
+                loadMutasiDepartemens(divVal, () => {
+                    ensureMutasiSelectOption(mutasiDepartemenSelect, deptVal, deptVal);
+                    if (mutasiDepartemenSelect) mutasiDepartemenSelect.value = deptVal || '';
+                    if (divVal && deptVal) {
+                        loadMutasiBagians(divVal, deptVal, () => {
+                            ensureMutasiSelectOption(mutasiBagianSelect, bagVal, bagVal);
+                            if (mutasiBagianSelect) mutasiBagianSelect.value = bagVal || '';
+                            if (divVal && deptVal && bagVal) {
+                                loadMutasiSeksis(divVal, deptVal, bagVal, () => {
+                                    ensureMutasiSelectOption(mutasiSeksiSelect, sekVal, sekVal);
+                                    if (mutasiSeksiSelect) mutasiSeksiSelect.value = sekVal || '';
+                                });
+                            } else if (mutasiSeksiSelect) {
+                                mutasiSeksiSelect.innerHTML = '<option value="">Pilih Bagian terlebih dahulu</option>';
+                                mutasiSeksiSelect.disabled = true;
+                            }
+                        });
+                    } else if (mutasiBagianSelect) {
+                        mutasiBagianSelect.innerHTML = '<option value="">Pilih Bagian</option>';
+                        mutasiBagianSelect.disabled = true;
+                        if (mutasiSeksiSelect) {
+                            mutasiSeksiSelect.innerHTML = '<option value="">Pilih Bagian terlebih dahulu</option>';
+                            mutasiSeksiSelect.disabled = true;
+                        }
+                    }
+                });
+            }
+            form.dokumen_sk.value = '';
+            const skInfo = document.getElementById('mutasi_sk_existing_info');
+            const removeWrap = document.getElementById('mutasi_remove_sk_wrap');
+            const removeCb = document.getElementById('mutasi_remove_sk_file');
+            if (removeCb) removeCb.checked = false;
+            if (row.sk_file_url) {
+                if (skInfo) skInfo.innerHTML = 'Dokumen saat ini: <a href="' + row.sk_file_url + '" target="_blank" rel="noopener">buka / unduh</a>';
+                if (removeWrap) removeWrap.classList.remove('d-none');
+            } else {
+                if (skInfo) skInfo.innerHTML = '';
+                if (removeWrap) removeWrap.classList.add('d-none');
+            }
+
+            const modalTitle = mutasiModalEl?.querySelector('.modal-title');
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (modalTitle) modalTitle.textContent = 'Edit Mutasi';
+            if (submitBtn) submitBtn.textContent = 'Update';
+
+            mutasiModal?.show();
+        }
+
+        function saveMutasiMembers(nikLama, nikBaru) {
+            return fetch(makeUrl('karyawan/copy-mutasi'), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        nik_lama: nikLama,
+                        nik_baru: nikBaru
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) {
+                        throw new Error(data.message || 'Gagal copy data mutasi');
+                    }
+                    return data;
+                });
+        }
+
+        function resetCatatanModalState() {
+            currentCatatanEditIndex = null;
+            const modalTitle = catatanModalEl?.querySelector('.modal-title');
+            const submitBtn = document.querySelector('#addCatatanKaryawanForm button[type="submit"]');
+            if (modalTitle) modalTitle.textContent = 'Tambah Catatan Karyawan';
+            if (submitBtn) submitBtn.textContent = 'Simpan';
+            const fileInfo = document.getElementById('ck_file_existing_info');
+            if (fileInfo) fileInfo.innerHTML = '';
+            const removeWrap = document.getElementById('ck_remove_file_wrap');
+            if (removeWrap) removeWrap.classList.add('d-none');
+            const removeCb = document.getElementById('ck_remove_file');
+            if (removeCb) removeCb.checked = false;
+        }
+
+        function normalizeCatatanRow(c) {
+            const id = c.id != null ? Number(c.id) : null;
+            return {
+                id,
+                tanggal: formatDateForInput(c.tanggal),
+                jenis: c.jenis || '',
+                kategori: c.kategori || '',
+                judul: c.judul || '',
+                deskripsi: c.deskripsi || '',
+                level: c.level || 'Non-SP',
+                status: c.status || 'Aktif',
+                no_dokumen: c.no_dokumen || '',
+                file_lampiran: c.file_lampiran || '',
+                file_url: c.file_url || null,
+                tanggal_berlaku: formatDateForInput(c.tanggal_berlaku),
+                tanggal_berakhir: formatDateForInput(c.tanggal_berakhir),
+            };
+        }
+
+        function updateCatatanTable() {
+            const tbody = document.getElementById('catatanKaryawanTableBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (!catatanMembers.length) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="9" class="text-center text-muted">Belum ada catatan karyawan.</td>`;
+                tbody.appendChild(tr);
+                return;
+            }
+
+            catatanMembers.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                const fileLink = item.file_url
+                    ? `<a href="${item.file_url}" target="_blank" rel="noopener">Unduh</a>`
+                    : '—';
+                tr.innerHTML = `
+                    <td>${item.tanggal || '—'}</td>
+                    <td>${item.jenis || '—'}</td>
+                    <td>${item.kategori || '—'}</td>
+                    <td>${item.judul || '—'}</td>
+                    <td>${item.level || '—'}</td>
+                    <td>${item.status || '—'}</td>
+                    <td>${item.no_dokumen || '—'}</td>
+                    <td class="text-center">${fileLink}</td>
+                    <td class="text-center">
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="#" onclick="editCatatanMember(${index}); return false;"><i class="fas fa-edit me-2"></i>Edit</a></li>
+                                <li><a class="dropdown-item text-danger" href="#" onclick="removeCatatanMember(${index}); return false;"><i class="fas fa-trash me-2"></i>Hapus</a></li>
+                            </ul>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function loadCatatanData(nik) {
+            if (!nik) {
+                catatanMembers = [];
+                updateCatatanTable();
+                return;
+            }
+            fetch(makeUrl(`karyawan/${encodeURIComponent(nik)}/catatan-karyawan`), {
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        catatanMembers = (data.catatan || []).map(normalizeCatatanRow);
+                        updateCatatanTable();
+                    } else {
+                        catatanMembers = [];
+                        updateCatatanTable();
+                    }
+                })
+                .catch(err => {
+                    console.error('Error loading catatan karyawan:', err);
+                    catatanMembers = [];
+                    updateCatatanTable();
+                });
+        }
+
+        function removeCatatanMember(index) {
+            const row = catatanMembers[index];
+            if (!row || !currentNik) {
+                if (row) catatanMembers.splice(index, 1);
+                updateCatatanTable();
+                return;
+            }
+            if (row.id == null) {
+                catatanMembers.splice(index, 1);
+                updateCatatanTable();
+                return;
+            }
+            if (!confirm('Hapus catatan ini?')) return;
+
+            fetch(makeUrl(`karyawan/${encodeURIComponent(currentNik)}/catatan-karyawan/${row.id}`), {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        catatanMembers.splice(index, 1);
+                        updateCatatanTable();
+                    } else {
+                        alert('Gagal menghapus catatan: ' + (data.message || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting catatan:', error);
+                    alert('Gagal menghapus catatan. Silakan coba lagi.');
+                });
+        }
+
+        function editCatatanMember(index) {
+            const row = catatanMembers[index];
+            if (!row) return;
+            currentCatatanEditIndex = index;
+            const form = document.getElementById('addCatatanKaryawanForm');
+            if (!form) return;
+
+            form.tanggal.value = row.tanggal || '';
+            form.status.value = row.status || 'Aktif';
+            form.jenis.value = row.jenis || 'SP';
+            form.kategori.value = row.kategori || 'Disiplin';
+            form.judul.value = row.judul || '';
+            form.deskripsi.value = row.deskripsi || '';
+            form.level.value = row.level || 'Non-SP';
+            form.no_dokumen.value = row.no_dokumen || '';
+            form.tanggal_berlaku.value = row.tanggal_berlaku || '';
+            form.tanggal_berakhir.value = row.tanggal_berakhir || '';
+
+            const fileInput = document.getElementById('ck_file_lampiran');
+            if (fileInput) fileInput.value = '';
+            const fileInfo = document.getElementById('ck_file_existing_info');
+            const removeWrap = document.getElementById('ck_remove_file_wrap');
+            const removeCb = document.getElementById('ck_remove_file');
+            if (removeCb) removeCb.checked = false;
+            if (row.file_url) {
+                if (fileInfo) fileInfo.innerHTML = 'Lampiran saat ini: <a href="' + row.file_url + '" target="_blank" rel="noopener">buka / unduh</a>';
+                if (removeWrap) removeWrap.classList.remove('d-none');
+            } else {
+                if (fileInfo) fileInfo.innerHTML = '';
+                if (removeWrap) removeWrap.classList.add('d-none');
+            }
+
+            const modalTitle = catatanModalEl?.querySelector('.modal-title');
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (modalTitle) modalTitle.textContent = 'Edit Catatan Karyawan';
+            if (submitBtn) submitBtn.textContent = 'Update';
+
+            catatanModal?.show();
+        }
+
+        function saveCatatanKaryawanMembers(nikLama, nikBaru) {
+            return fetch(makeUrl('karyawan/copy-catatan-karyawan'), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        nik_lama: nikLama,
+                        nik_baru: nikBaru
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) {
+                        throw new Error(data.message || 'Gagal copy catatan karyawan');
+                    }
+                    return data;
+                });
+        }
+
+        function updatePelatihanTable() {
+            const tbody = document.getElementById('pelatihanTableBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (!pelatihanMembers.length) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="8" class="text-center text-muted">Belum ada data pelatihan.</td>`;
+                tbody.appendChild(tr);
+                return;
+            }
+
+            pelatihanMembers.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${item.nm_pelatihan || '-'}</td>
+                    <td>${item.penyelenggara || '-'}</td>
+                    <td>${item.lokasi || '-'}</td>
+                    <td>${formatDateForInput(item.tg_pelatihan) || '-'}</td>
+                    <td>${formatDateForInput(item.tg_selesai) || '-'}</td>
+                    <td class="text-center">
+                        <span class="badge ${item.sertifikat ? 'bg-success' : 'bg-secondary'}">
+                            ${item.sertifikat ? 'Ya' : 'Tidak'}
+                        </span>
+                    </td>
+                    <td>${item.keterangan || '-'}</td>
+                    <td class="text-center">
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="#" onclick="editPelatihanMember(${index}); return false;"><i class="fas fa-edit me-2"></i>Edit</a></li>
+                                <li><a class="dropdown-item text-danger" href="#" onclick="removePelatihanMember(${index}); return false;"><i class="fas fa-trash me-2"></i>Hapus</a></li>
+                            </ul>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function loadPelatihanData(nik) {
+            if (!nik) {
+                pelatihanMembers = [];
+                updatePelatihanTable();
+                return;
+            }
+            fetch(makeUrl(`karyawan/${nik}/pelatihan`), {
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        pelatihanMembers = (data.pelatihan || []).map(p => ({
+                            ...p,
+                            _key: p.nm_pelatihan, // key edit/delete
+                            sertifikat: (p.sertifikat ?? p.Sertifikasi ?? 0) ? 1 : 0,
+                            keterangan: p.keterangan ?? p.Keterangan ?? ''
+                        }));
+                        updatePelatihanTable();
+                    } else {
+                        pelatihanMembers = [];
+                        updatePelatihanTable();
+                    }
+                })
+                .catch(err => {
+                    console.error('Error loading pelatihan:', err);
+                    pelatihanMembers = [];
+                    updatePelatihanTable();
+                });
+        }
+
+        function removePelatihanMember(index) {
+            const pelatihan = pelatihanMembers[index];
+            if (!pelatihan || !currentNik) {
+                pelatihanMembers.splice(index, 1);
+                updatePelatihanTable();
+                return;
+            }
+
+            if (!confirm('Hapus data pelatihan ini?')) return;
+
+            const key = encodeURIComponent(pelatihan._key || pelatihan.nm_pelatihan);
+            fetch(makeUrl(`karyawan/${currentNik}/pelatihan/${key}`), {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        pelatihanMembers.splice(index, 1);
+                        updatePelatihanTable();
+                    } else {
+                        alert('Gagal menghapus data pelatihan: ' + (data.message || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting pelatihan:', error);
+                    alert('Gagal menghapus data pelatihan. Silakan coba lagi.');
+                });
+        }
+
+        function editPelatihanMember(index) {
+            const pel = pelatihanMembers[index];
+            if (!pel) return;
+            currentPelatihanEditIndex = index;
+            const form = document.getElementById('addPelatihanForm');
+            form.nm_pelatihan.value = pel.nm_pelatihan || '';
+            form.penyelenggara.value = pel.penyelenggara || '';
+            form.lokasi.value = pel.lokasi || '';
+            form.tg_pelatihan.value = formatDateForInput(pel.tg_pelatihan);
+            form.tg_selesai.value = formatDateForInput(pel.tg_selesai);
+            form.sertifikat.checked = !!pel.sertifikat;
+            form.keterangan.value = pel.keterangan || '';
+
+            const modalTitle = pelatihanModalEl?.querySelector('.modal-title');
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (modalTitle) modalTitle.textContent = 'Edit Pelatihan';
+            if (submitBtn) submitBtn.textContent = 'Update';
+
+            pelatihanModal?.show();
+        }
+
+        function savePelatihanMembers(nikLama, nikBaru) {
+            // Copy pelatihan data from old NIK to new NIK using batch copy endpoint
+            return fetch(makeUrl('karyawan/copy-pelatihan'), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        nik_lama: nikLama,
+                        nik_baru: nikBaru
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) {
+                        throw new Error(data.message || 'Gagal copy data pelatihan');
+                    }
+                    return data;
+                });
         }
 
         function mapHubunganValue(value) {
@@ -788,17 +2009,96 @@
             resetPendidikanModalState();
         });
 
+        pelatihanModalEl?.addEventListener('hidden.bs.modal', () => {
+            document.getElementById('addPelatihanForm').reset();
+            resetPelatihanModalState();
+        });
+
+        mutasiModalEl?.addEventListener('hidden.bs.modal', () => {
+            document.getElementById('addMutasiForm').reset();
+            resetMutasiModalState();
+        });
+
+        catatanModalEl?.addEventListener('hidden.bs.modal', () => {
+            document.getElementById('addCatatanKaryawanForm')?.reset();
+            resetCatatanModalState();
+        });
+
+        mutasiDivisiSelect?.addEventListener('change', function() {
+            const divisiKode = this.value;
+            if (mutasiDepartemenSelect) {
+                mutasiDepartemenSelect.innerHTML = '<option value="">Pilih Departemen</option>';
+                mutasiDepartemenSelect.disabled = !divisiKode;
+            }
+            if (mutasiBagianSelect) {
+                mutasiBagianSelect.innerHTML = '<option value="">Pilih Bagian</option>';
+                mutasiBagianSelect.disabled = true;
+            }
+            if (mutasiSeksiSelect) {
+                mutasiSeksiSelect.innerHTML = '<option value="">Pilih Bagian terlebih dahulu</option>';
+                mutasiSeksiSelect.disabled = true;
+            }
+            if (mutasiJabatanSelect) {
+                mutasiJabatanSelect.innerHTML = '<option value="">Memuat...</option>';
+                mutasiJabatanSelect.disabled = true;
+            }
+            if (divisiKode) {
+                loadMutasiDepartemens(divisiKode);
+                loadMutasiJabatans(divisiKode);
+            } else if (mutasiJabatanSelect) {
+                mutasiJabatanSelect.innerHTML = '<option value="">Pilih Divisi terlebih dahulu</option>';
+                mutasiJabatanSelect.disabled = true;
+            }
+        });
+
+        mutasiDepartemenSelect?.addEventListener('change', function() {
+            const divisiKode = mutasiDivisiSelect ? mutasiDivisiSelect.value : '';
+            const deptKode = this.value;
+            if (mutasiBagianSelect) {
+                mutasiBagianSelect.innerHTML = '<option value="">Pilih Bagian</option>';
+                mutasiBagianSelect.disabled = !deptKode;
+            }
+            if (mutasiSeksiSelect) {
+                mutasiSeksiSelect.innerHTML = '<option value="">Pilih Bagian terlebih dahulu</option>';
+                mutasiSeksiSelect.disabled = true;
+            }
+            if (divisiKode && deptKode) {
+                loadMutasiBagians(divisiKode, deptKode);
+            }
+        });
+
+        mutasiBagianSelect?.addEventListener('change', function() {
+            const divisiKode = mutasiDivisiSelect ? mutasiDivisiSelect.value : '';
+            const deptKode = mutasiDepartemenSelect ? mutasiDepartemenSelect.value : '';
+            const bagianKode = this.value;
+            if (mutasiSeksiSelect) {
+                mutasiSeksiSelect.innerHTML = '<option value="">Pilih Seksi</option>';
+                mutasiSeksiSelect.disabled = !bagianKode;
+            }
+            if (divisiKode && deptKode && bagianKode) {
+                loadMutasiSeksis(divisiKode, deptKode, bagianKode);
+            } else if (mutasiSeksiSelect) {
+                mutasiSeksiSelect.innerHTML = '<option value="">Pilih Bagian terlebih dahulu</option>';
+                mutasiSeksiSelect.disabled = true;
+            }
+        });
+
         // Initialize
         initializeForm();
 
         // New button
         document.getElementById('newBtn').addEventListener('click', function() {
             resetForm();
-            enableForm();
             isEditMode = false;
             currentNik = null;
-            // Update Copy Data button state
+            enableForm();
             updateCopyDataButton();
+            updatePrintBiodataButton();
+        });
+
+        document.getElementById('printBiodataBtn')?.addEventListener('click', function() {
+            if (!currentNik) return;
+            window.open(makeUrl(`karyawan/${encodeURIComponent(currentNik)}/biodata-cetak`), '_blank', 'noopener');
         });
 
         // Auto-generate NIK when Tgl_Masuk is filled (only in new mode)
@@ -813,6 +2113,204 @@
             if (isEditMode && currentNik) {
                 updateCopyDataButton();
             }
+        });
+
+        // Pelatihan - add button
+        const addPelatihanBtn = document.getElementById('addPelatihanBtn');
+        addPelatihanBtn?.addEventListener('click', function() {
+            if (!currentNik) {
+                alert('Silakan pilih atau simpan karyawan terlebih dahulu.');
+                return;
+            }
+            document.getElementById('addPelatihanForm').reset();
+            resetPelatihanModalState();
+            pelatihanModal?.show();
+        });
+
+        // Pelatihan - submit form
+        const addPelatihanForm = document.getElementById('addPelatihanForm');
+        addPelatihanForm?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (!currentNik) {
+                alert('Silakan pilih atau simpan karyawan terlebih dahulu.');
+                return;
+            }
+
+            const form = e.target;
+            const formData = new FormData(form);
+            const payload = {
+                nm_pelatihan: formData.get('nm_pelatihan'),
+                penyelenggara: formData.get('penyelenggara'),
+                lokasi: formData.get('lokasi'),
+                tg_pelatihan: formData.get('tg_pelatihan'),
+                tg_selesai: formData.get('tg_selesai'),
+                sertifikat: formData.get('sertifikat') ? 1 : 0,
+                keterangan: formData.get('keterangan'),
+            };
+
+            let url = makeUrl(`karyawan/${currentNik}/pelatihan`);
+            let method = 'POST';
+            let pelId = null;
+
+            if (currentPelatihanEditIndex !== null && pelatihanMembers[currentPelatihanEditIndex]) {
+                const existingData = pelatihanMembers[currentPelatihanEditIndex];
+                pelId = encodeURIComponent(existingData._key || existingData.nm_pelatihan);
+                url = makeUrl(`karyawan/${currentNik}/pelatihan/${pelId}`);
+                method = 'PUT';
+            }
+
+            fetch(url, {
+                    method: method,
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        pelatihanModal?.hide();
+                        // Reload list
+                        loadPelatihanData(currentNik);
+                    } else {
+                        alert(data.message || 'Gagal menyimpan data pelatihan');
+                    }
+                })
+                .catch(err => {
+                    console.error('Error saving pelatihan:', err);
+                    alert('Terjadi kesalahan saat menyimpan data pelatihan');
+                });
+        });
+
+        // Mutasi - add button
+        document.getElementById('addMutasiBtn')?.addEventListener('click', function() {
+            if (!currentNik) {
+                alert('Silakan pilih atau simpan karyawan terlebih dahulu.');
+                return;
+            }
+            document.getElementById('addMutasiForm').reset();
+            resetMutasiModalState();
+            mutasiModal?.show();
+        });
+
+        // Mutasi - submit form
+        document.getElementById('addMutasiForm')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (!currentNik) {
+                alert('Silakan pilih atau simpan karyawan terlebih dahulu.');
+                return;
+            }
+
+            const form = e.target;
+            const formData = new FormData(form);
+            formData.set('no_sk', (formData.get('no_sk') || '').trim());
+
+            let url = makeUrl(`karyawan/${currentNik}/mutasi`);
+            let useMethodOverride = false;
+
+            if (currentMutasiEditIndex !== null && mutasiMembers[currentMutasiEditIndex]) {
+                const orig = mutasiMembers[currentMutasiEditIndex].original_no_sk || mutasiMembers[currentMutasiEditIndex].no_sk;
+                if (orig) {
+                    url = makeUrl(`karyawan/${currentNik}/mutasi/${encodeURIComponent(orig)}`);
+                    useMethodOverride = true;
+                    formData.append('_method', 'PUT');
+                }
+            }
+
+            if (!useMethodOverride && formData.has('remove_sk_file')) {
+                formData.delete('remove_sk_file');
+            }
+
+            fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json'
+                    },
+                    body: formData
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        mutasiModal?.hide();
+                        loadMutasiData(currentNik);
+                    } else {
+                        const msg = (data.errors && typeof data.errors === 'object')
+                            ? Object.values(data.errors).flat().join('\n')
+                            : (data.message || 'Gagal menyimpan data mutasi');
+                        alert(msg);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error saving mutasi:', err);
+                    alert('Terjadi kesalahan saat menyimpan data mutasi');
+                });
+        });
+
+        document.getElementById('addCatatanKaryawanBtn')?.addEventListener('click', function() {
+            if (!currentNik) {
+                alert('Silakan pilih atau simpan karyawan terlebih dahulu.');
+                return;
+            }
+            document.getElementById('addCatatanKaryawanForm')?.reset();
+            resetCatatanModalState();
+            catatanModal?.show();
+        });
+
+        document.getElementById('addCatatanKaryawanForm')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (!currentNik) {
+                alert('Silakan pilih atau simpan karyawan terlebih dahulu.');
+                return;
+            }
+
+            const form = e.target;
+            const formData = new FormData(form);
+            const judul = (formData.get('judul') || '').toString().trim();
+            formData.set('judul', judul);
+
+            let url = makeUrl(`karyawan/${encodeURIComponent(currentNik)}/catatan-karyawan`);
+            let useMethodOverride = false;
+
+            if (currentCatatanEditIndex !== null && catatanMembers[currentCatatanEditIndex]) {
+                const cid = catatanMembers[currentCatatanEditIndex].id;
+                if (cid != null) {
+                    url = makeUrl(`karyawan/${encodeURIComponent(currentNik)}/catatan-karyawan/${cid}`);
+                    useMethodOverride = true;
+                    formData.append('_method', 'PUT');
+                }
+            }
+
+            if (!useMethodOverride) {
+                formData.delete('remove_file_lampiran');
+            }
+
+            fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json'
+                    },
+                    body: formData
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        catatanModal?.hide();
+                        loadCatatanData(currentNik);
+                    } else {
+                        const msg = (data.errors && typeof data.errors === 'object')
+                            ? Object.values(data.errors).flat().join('\n')
+                            : (data.message || 'Gagal menyimpan catatan karyawan');
+                        alert(msg);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error saving catatan karyawan:', err);
+                    alert('Terjadi kesalahan saat menyimpan catatan karyawan');
+                });
         });
 
         // Auto-fill Nama Lengkap from Nama Depan + Nama Tengah + Nama Akhir
@@ -968,7 +2466,7 @@
             copyBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Memproses...';
 
             // Call API to get data from current NIK
-            fetch(`/karyawan/${currentNik}/copy-data`, {
+            fetch(makeUrl(`karyawan/${currentNik}/copy-data`), {
                     method: 'GET',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1056,6 +2554,11 @@
         document.getElementById('addFamilyForm').addEventListener('submit', function(e) {
             e.preventDefault();
 
+            if (!currentNik) {
+                alert('Silakan pilih atau simpan karyawan terlebih dahulu.');
+                return;
+            }
+
             const formData = new FormData(this);
             const familyData = Object.fromEntries(formData);
 
@@ -1076,51 +2579,122 @@
             }
 
             const isEditing = currentFamilyEditIndex !== null;
-            if (isEditing && familyMembers[currentFamilyEditIndex]) {
-                familyMembers[currentFamilyEditIndex] = {
-                    ...familyMembers[currentFamilyEditIndex],
-                    ...familyData
-                };
-            } else {
-                familyMembers.push(familyData);
-            }
-            currentFamilyEditIndex = null;
-            updateFamilyTable();
+            let url, method, payload;
 
-            // Reset form and close modal
-            this.reset();
-            familyModal?.hide();
+            if (isEditing && familyMembers[currentFamilyEditIndex]) {
+                // Edit mode - update existing
+                const existingData = familyMembers[currentFamilyEditIndex];
+                const oldHubKeluarga = existingData.hubKeluarga;
+                payload = {
+                    ...familyData,
+                    oldNamaKeluarga: existingData.NamaKeluarga // For composite key lookup
+                };
+                url = makeUrl(`karyawan/${currentNik}/keluarga/${encodeURIComponent(oldHubKeluarga)}`);
+                method = 'PUT';
+            } else {
+                // Add mode - create new
+                payload = familyData;
+                url = makeUrl(`karyawan/${currentNik}/keluarga`);
+                method = 'POST';
+            }
+
+            fetch(url, {
+                    method: method,
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        // Reload family data from server
+                        loadFamilyData(currentNik);
+                        // Reset form and close modal
+                        this.reset();
+                        resetFamilyModalState();
+                        familyModal?.hide();
+                    } else {
+                        alert(data.message || 'Gagal menyimpan data anggota keluarga');
+                    }
+                })
+                .catch(err => {
+                    console.error('Error saving family member:', err);
+                    alert('Terjadi kesalahan saat menyimpan data anggota keluarga');
+                });
         });
 
         // Search functionality
-        document.getElementById('search').addEventListener('input', function() {
-            const searchTerm = this.value.toLowerCase();
-            const rows = document.querySelectorAll('.karyawan-row');
+        const searchInput = document.getElementById('search');
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                try {
+                    const searchTerm = this.value.toLowerCase();
+                    const rows = document.querySelectorAll('.karyawan-row');
 
-            rows.forEach(row => {
-                const nik = row.cells[1].textContent.toLowerCase();
-                const nama = row.cells[2].textContent.toLowerCase();
+                    rows.forEach(row => {
+                        const nik = row.cells[1].textContent.toLowerCase();
+                        const nama = row.cells[2].textContent.toLowerCase();
 
-                if (nik.includes(searchTerm) || nama.includes(searchTerm)) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
+                        if (nik.includes(searchTerm) || nama.includes(searchTerm)) {
+                            row.style.display = '';
+                        } else {
+                            row.style.display = 'none';
+                        }
+                    });
+                } catch (error) {
+                    console.error('Error in search:', error);
                 }
             });
-        });
+        }
 
         // Row click to load karyawan data
-        document.querySelectorAll('.karyawan-row').forEach(row => {
-            row.addEventListener('click', function() {
+        const karyawanRows = document.querySelectorAll('.karyawan-row');
+        if (karyawanRows && karyawanRows.length > 0) {
+            karyawanRows.forEach(row => {
+                row.addEventListener('click', function() {
+                    try {
+                        // Remove active class from all rows
+                        document.querySelectorAll('.karyawan-row').forEach(r => r.classList.remove('table-active'));
+                        // Add active class to clicked row
+                        this.classList.add('table-active');
+
+                        const nik = this.getAttribute('data-nik');
+                        if (nik && typeof loadKaryawanData === 'function') {
+                            loadKaryawanData(nik);
+                        } else {
+                            console.error('loadKaryawanData is not a function or NIK is missing');
+                        }
+                    } catch (error) {
+                        console.error('Error clicking karyawan row:', error);
+                        alert('Terjadi kesalahan saat memuat data karyawan: ' + error.message);
+                    }
+                });
+            });
+        }
+
+        // Auto-load karyawan from URL parameter (for link from List Karyawan Aktif)
+        const urlParams = new URLSearchParams(window.location.search);
+        const nikParam = urlParams.get('nik');
+        if (nikParam) {
+            // Find and highlight the row
+            const targetRow = document.querySelector(`.karyawan-row[data-nik="${nikParam}"]`);
+            if (targetRow) {
                 // Remove active class from all rows
                 document.querySelectorAll('.karyawan-row').forEach(r => r.classList.remove('table-active'));
-                // Add active class to clicked row
-                this.classList.add('table-active');
-
-                const nik = this.getAttribute('data-nik');
-                loadKaryawanData(nik);
-            });
-        });
+                // Add active class to target row
+                targetRow.classList.add('table-active');
+                // Scroll to the row
+                targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Load the karyawan data
+                loadKaryawanData(nikParam);
+            } else {
+                // If row not found (maybe not loaded yet), try to load data anyway
+                loadKaryawanData(nikParam);
+            }
+        }
 
         function initializeForm() {
             disableForm();
@@ -1143,7 +2717,7 @@
             }
 
             // Call API to generate NIK
-            fetch('/karyawan/generate-nik', {
+            fetch(makeUrl('karyawan/generate-nik'), {
                     method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1183,7 +2757,7 @@
                 }
 
                 // Call API to generate NIK based on current year
-                fetch('/karyawan/generate-nik', {
+                fetch(makeUrl('karyawan/generate-nik'), {
                         method: 'POST',
                         headers: {
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1210,6 +2784,12 @@
             });
         }
 
+        function updatePrintBiodataButton() {
+            const btn = document.getElementById('printBiodataBtn');
+            if (!btn) return;
+            btn.disabled = !(isEditMode && currentNik);
+        }
+
         function enableForm() {
             document.getElementById('saveBtn').disabled = false;
             document.getElementById('cancelBtn').disabled = false;
@@ -1217,6 +2797,7 @@
 
             // Copy Data button: hanya enabled jika ada currentNik (record dipilih) dan tidak aktif
             updateCopyDataButton();
+            updatePrintBiodataButton();
 
             // Enable all form inputs
             const inputs = document.querySelectorAll('input, select, textarea');
@@ -1229,6 +2810,8 @@
             // Keep NIK and Nama Lengkap readonly (auto-generated)
             document.getElementById('nik').readOnly = true;
             document.getElementById('nama_lengkap').readOnly = true;
+
+            syncMutasiOrganisasiFieldsEnabled();
         }
 
         function disableForm() {
@@ -1236,6 +2819,8 @@
             document.getElementById('cancelBtn').disabled = true;
             document.getElementById('deleteBtn').disabled = true;
             document.getElementById('copyDataBtn').disabled = true;
+            const printB = document.getElementById('printBiodataBtn');
+            if (printB) printB.disabled = true;
 
             // Disable all form inputs
             const inputs = document.querySelectorAll('input, select, textarea');
@@ -1254,14 +2839,29 @@
             updateFamilyTable();
             pendidikanMembers = [];
             updatePendidikanTable();
+            pelatihanMembers = [];
+            updatePelatihanTable();
+            mutasiMembers = [];
+            updateMutasiTable();
+            catatanMembers = [];
+            updateCatatanTable();
             currentFamilyEditIndex = null;
             currentPendidikanEditIndex = null;
+            currentPelatihanEditIndex = null;
+            currentMutasiEditIndex = null;
+            currentCatatanEditIndex = null;
 
             // Reset hierarchical dropdowns
             departemenSelect.innerHTML = '<option value="">Pilih Divisi terlebih dahulu</option>';
             departemenSelect.disabled = true;
             bagianSelect.innerHTML = '<option value="">Pilih Departemen terlebih dahulu</option>';
             bagianSelect.disabled = true;
+            const seksiSelect = document.getElementById('seksi');
+            seksiSelect.innerHTML = '<option value="">Pilih Bagian terlebih dahulu</option>';
+            seksiSelect.disabled = true;
+            
+            // Reset jabatan to show all options
+            loadAllJabatans();
 
             // Reset Nama Lengkap
             document.getElementById('nama_lengkap').value = '';
@@ -1279,7 +2879,7 @@
         }
 
         function loadKaryawanData(nik) {
-            fetch(`/karyawan/${nik}`, {
+            fetch(makeUrl(`karyawan/${nik}`), {
                     method: 'GET',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1298,6 +2898,9 @@
                         populateForm(data.karyawan);
                         loadFamilyData(nik);
                         loadPendidikanData(nik);
+                        loadPelatihanData(nik);
+                        loadMutasiData(nik);
+                        loadCatatanData(nik);
                         enableForm();
                         isEditMode = true;
                         currentNik = nik;
@@ -1327,7 +2930,15 @@
                         element.checked = karyawan[key] == 1;
                     } else if (element.tagName === 'SELECT') {
                         // Handle select/dropdown
+                        // Enable sementara jika disabled untuk bisa set value
+                        const wasDisabled = element.disabled;
+                        if (wasDisabled) {
+                            element.disabled = false;
+                        }
                         element.value = karyawan[key] || '';
+                        if (wasDisabled) {
+                            element.disabled = true;
+                        }
                     } else {
                         // If field is a date input, normalize to YYYY-MM-DD
                         if (element.type === 'date' && karyawan[key]) {
@@ -1356,6 +2967,98 @@
                 removePhotoBtn.style.display = 'none';
             }
             photoToRemove = false;
+
+            // Handle hierarchical dropdowns (Divisi -> Departemen -> Bagian -> Seksi)
+            // Also handle Jabatan filtering based on Divisi
+            const divisiValue = karyawan['Divisi'];
+            const deptValue = karyawan['dept'];
+            const bagianValue = karyawan['vcKodeBagian'];
+            const seksiValue = karyawan['vcKodeSeksi'];
+            const jabatanValue = karyawan['Jabat'];
+
+            console.log('Populating hierarchical fields:', {
+                divisi: divisiValue,
+                dept: deptValue,
+                bagian: bagianValue,
+                seksi: seksiValue,
+                jabatan: jabatanValue
+            });
+
+            if (divisiValue) {
+                const divisiElement = document.querySelector('[name="Divisi"]');
+                if (divisiElement) {
+                    divisiElement.value = divisiValue;
+                    // Load jabatans filtered by divisi dengan callback untuk set value setelah ter-load
+                    loadJabatans(divisiValue, function() {
+                        // Set jabatan value setelah jabatans ter-load
+                        if (jabatanValue) {
+                            const jabatanElement = document.querySelector('[name="Jabat"]');
+                            if (jabatanElement) {
+                                jabatanElement.value = jabatanValue;
+                                console.log('Set jabatan value:', jabatanValue);
+                            }
+                        }
+                    });
+                    
+                    // Load departemens dengan callback untuk set value setelah ter-load
+                    loadDepartemens(divisiValue, function() {
+                        // Set departemen value setelah departemens ter-load
+                        if (deptValue) {
+                            const deptElement = document.querySelector('[name="dept"]');
+                            if (deptElement) {
+                                // Enable sementara untuk set value
+                                if (deptElement.disabled) {
+                                    deptElement.disabled = false;
+                                }
+                                deptElement.value = deptValue;
+                                console.log('Set dept value:', deptValue);
+                                
+                                // Load bagians dengan callback untuk set value setelah ter-load
+                                loadBagians(divisiValue, deptValue, function() {
+                                    // Set bagian value setelah bagians ter-load
+                                    if (bagianValue) {
+                                        const bagianElement = document.querySelector('[name="vcKodeBagian"]');
+                                        if (bagianElement) {
+                                            // Enable sementara untuk set value
+                                            if (bagianElement.disabled) {
+                                                bagianElement.disabled = false;
+                                            }
+                                            bagianElement.value = bagianValue;
+                                            console.log('Set bagian value:', bagianValue);
+                                            
+                                            // Load seksis dengan callback untuk set value setelah ter-load
+                                            loadSeksis(divisiValue, deptValue, bagianValue, function() {
+                                                // Set seksi value setelah seksis ter-load
+                                                if (seksiValue) {
+                                                    const seksiElement = document.querySelector('[name="vcKodeSeksi"]');
+                                                    if (seksiElement) {
+                                                        // Enable sementara untuk set value
+                                                        if (seksiElement.disabled) {
+                                                            seksiElement.disabled = false;
+                                                        }
+                                                        seksiElement.value = seksiValue;
+                                                        console.log('Set seksi value:', seksiValue);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
+                }
+            } else {
+                // Jika tidak ada divisi, load all jabatans
+                loadAllJabatans();
+                // Set jabatan value jika ada
+                if (jabatanValue) {
+                    const jabatanElement = document.querySelector('[name="Jabat"]');
+                    if (jabatanElement) {
+                        jabatanElement.value = jabatanValue;
+                    }
+                }
+            }
         }
 
         function populateFormFromCopy(karyawan) {
@@ -1502,7 +3205,7 @@
         }
 
         function loadFamilyData(nik) {
-            fetch(`/karyawan/${nik}/keluarga`, {
+            fetch(makeUrl(`karyawan/${nik}/keluarga`), {
                     method: 'GET',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1554,10 +3257,46 @@
         }
 
         function removeFamilyMember(index) {
-            if (confirm('Apakah Anda yakin ingin menghapus anggota keluarga ini?')) {
-                familyMembers.splice(index, 1);
-                updateFamilyTable();
+            if (!confirm('Apakah Anda yakin ingin menghapus anggota keluarga ini?')) {
+                return;
             }
+
+            if (!currentNik) {
+                alert('NIK tidak ditemukan.');
+                return;
+            }
+
+            const member = familyMembers[index];
+            if (!member) {
+                alert('Data anggota keluarga tidak ditemukan.');
+                return;
+            }
+
+            const hubKeluarga = encodeURIComponent(member.hubKeluarga);
+            const namaKeluarga = encodeURIComponent(member.NamaKeluarga);
+            
+            // Use query parameter for NamaKeluarga since it's part of composite key
+            fetch(makeUrl(`karyawan/${currentNik}/keluarga/${hubKeluarga}?NamaKeluarga=${namaKeluarga}`), {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        // Reload family data from server
+                        loadFamilyData(currentNik);
+                    } else {
+                        alert(data.message || 'Gagal menghapus data anggota keluarga');
+                    }
+                })
+                .catch(err => {
+                    console.error('Error deleting family member:', err);
+                    alert('Terjadi kesalahan saat menghapus data anggota keluarga');
+                });
         }
 
         function editFamilyMember(index) {
@@ -1614,12 +3353,12 @@
 
             // Jika karyawan sudah ada (edit mode), langsung save ke database
             if (currentNik && isEditMode) {
-                let url = `/karyawan/${currentNik}/pendidikan`;
+                let url = `${basePath}/karyawan/${currentNik}/pendidikan`;
                 let method = 'POST';
 
                 if (isEditing && existingData && (existingData._key || existingData.education_level)) {
                     const key = encodeURIComponent(existingData._key || existingData.education_level);
-                    url = `/karyawan/${currentNik}/pendidikan/${key}`;
+                    url = `${basePath}/karyawan/${currentNik}/pendidikan/${key}`;
                     method = 'PUT';
                 }
 
@@ -1675,7 +3414,7 @@
 
         function loadPendidikanData(nik) {
             console.log('Loading pendidikan data for NIK:', nik);
-            fetch(`/karyawan/${nik}/pendidikan`, {
+            fetch(makeUrl(`karyawan/${nik}/pendidikan`), {
                     method: 'GET',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1765,7 +3504,7 @@
             // Jika ada key (data sudah di database), hapus via API
             if ((pendidikan._key || pendidikan.education_level) && currentNik && isEditMode) {
                 const key = encodeURIComponent(pendidikan._key || pendidikan.education_level);
-                fetch(`/karyawan/${currentNik}/pendidikan/${key}`, {
+                fetch(makeUrl(`karyawan/${currentNik}/pendidikan/${key}`), {
                         method: 'DELETE',
                         headers: {
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1815,7 +3554,7 @@
 
         function saveFamilyMembers(nikLama, nikBaru) {
             // Copy keluarga data from old NIK to new NIK using batch copy endpoint
-            return fetch('/karyawan/copy-keluarga', {
+            return fetch(makeUrl('karyawan/copy-keluarga'), {
                     method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1838,7 +3577,7 @@
 
         function savePendidikanMembers(nikLama, nikBaru) {
             // Copy pendidikan data from old NIK to new NIK using batch copy endpoint
-            return fetch('/karyawan/copy-pendidikan', {
+            return fetch(makeUrl('karyawan/copy-pendidikan'), {
                     method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1874,7 +3613,27 @@
                             formData.append(input.name, input.files[0]);
                         }
                     } else {
-                        formData.append(input.name, input.value);
+                        // Untuk select yang disabled, tetap append value-nya
+                        // karena disabled element tidak mengirim value secara default
+                        if (input.tagName === 'SELECT' && input.disabled) {
+                            // Enable sementara untuk bisa mengambil value, lalu disable lagi
+                            const wasDisabled = input.disabled;
+                            input.disabled = false;
+                            const value = input.value || '';
+                            formData.append(input.name, value);
+                            input.disabled = wasDisabled;
+                            // Debug log untuk field hierarchical
+                            if (input.name === 'dept' || input.name === 'vcKodeBagian' || input.name === 'vcKodeSeksi') {
+                                console.log('Saving ' + input.name + ':', value);
+                            }
+                        } else {
+                            const value = input.value || '';
+                            formData.append(input.name, value);
+                            // Debug log untuk field hierarchical
+                            if (input.name === 'dept' || input.name === 'vcKodeBagian' || input.name === 'vcKodeSeksi') {
+                                console.log('Saving ' + input.name + ':', value);
+                            }
+                        }
                     }
                 }
             });
@@ -1887,7 +3646,7 @@
             // Catatan: Data keluarga tidak dikirim di sini karena tab Keluarga punya CRUD sendiri
             // Data keluarga dikelola melalui endpoint terpisah di tab Keluarga
 
-            const url = isEditMode ? `/karyawan/${currentNik}` : '/karyawan';
+            const url = isEditMode ? makeUrl(`karyawan/${currentNik}`) : makeUrl('karyawan');
             const method = isEditMode ? 'POST' : 'POST';
 
             // Untuk method PUT, gunakan method spoofing
@@ -1952,15 +3711,27 @@
                         if (oldNik && newNik && newNik.trim() !== '' && oldNik !== newNik) {
                             Promise.all([
                                     saveFamilyMembers(oldNik, newNik),
-                                    savePendidikanMembers(oldNik, newNik)
+                                    savePendidikanMembers(oldNik, newNik),
+                                    savePelatihanMembers(oldNik, newNik),
+                                    saveMutasiMembers(oldNik, newNik),
+                                    saveCatatanKaryawanMembers(oldNik, newNik)
                                 ])
-                                .then(([keluargaResult, pendidikanResult]) => {
+                                .then(([keluargaResult, pendidikanResult, pelatihanResult, mutasiResult, catatanResult]) => {
                                     let info = [];
                                     if (keluargaResult.copied > 0) {
                                         info.push(`keluarga (${keluargaResult.copied} anggota)`);
                                     }
                                     if (pendidikanResult.copied > 0) {
                                         info.push(`pendidikan (${pendidikanResult.copied} record)`);
+                                    }
+                                    if (pelatihanResult.copied > 0) {
+                                        info.push(`pelatihan (${pelatihanResult.copied} record)`);
+                                    }
+                                    if (mutasiResult.copied > 0) {
+                                        info.push(`mutasi (${mutasiResult.copied} record)`);
+                                    }
+                                    if (catatanResult.copied > 0) {
+                                        info.push(`catatan karyawan (${catatanResult.copied} record)`);
                                     }
                                     const infoText = info.length > 0 ? ' dan ' + info.join(', ') : '';
                                     alert(`Data karyawan${infoText} berhasil disimpan dengan NIK ${newNik}`);
@@ -1992,7 +3763,7 @@
         }
 
         function deleteKaryawan(nik) {
-            fetch(`/karyawan/${nik}`, {
+            fetch(makeUrl(`karyawan/${nik}`), {
                     method: 'DELETE',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -2030,20 +3801,34 @@
         window.editFamilyMember = editFamilyMember;
         window.removePendidikanMember = removePendidikanMember;
         window.editPendidikanMember = editPendidikanMember;
+        window.removePelatihanMember = removePelatihanMember;
+        window.editPelatihanMember = editPelatihanMember;
+        window.removeMutasiMember = removeMutasiMember;
+        window.editMutasiMember = editMutasiMember;
+        window.removeCatatanMember = removeCatatanMember;
+        window.editCatatanMember = editCatatanMember;
 
         // Hierarchical dropdown functionality
-        // When divisi changes, load departemens
+        // When divisi changes, load departemens and filter jabatans
         divisiSelect.addEventListener('change', function() {
             const divisiKode = this.value;
 
-            // Reset departemen and bagian
+            // Reset departemen, bagian, and seksi
             departemenSelect.innerHTML = '<option value="">Pilih Departemen</option>';
             departemenSelect.disabled = !divisiKode;
             bagianSelect.innerHTML = '<option value="">Pilih Bagian</option>';
             bagianSelect.disabled = true;
+            const seksiSelect = document.getElementById('seksi');
+            seksiSelect.innerHTML = '<option value="">Pilih Bagian terlebih dahulu</option>';
+            seksiSelect.disabled = true;
 
+            // Filter jabatans based on divisi
             if (divisiKode) {
+                loadJabatans(divisiKode);
                 loadDepartemens(divisiKode);
+            } else {
+                // If no divisi selected, show all jabatans
+                loadAllJabatans();
             }
         });
 
@@ -2052,12 +3837,34 @@
             const divisiKode = divisiSelect.value;
             const deptKode = this.value;
 
-            // Reset bagian
+            // Reset bagian and seksi
             bagianSelect.innerHTML = '<option value="">Pilih Bagian</option>';
             bagianSelect.disabled = !deptKode;
+            const seksiSelect = document.getElementById('seksi');
+            seksiSelect.innerHTML = '<option value="">Pilih Bagian terlebih dahulu</option>';
+            seksiSelect.disabled = true;
 
             if (divisiKode && deptKode) {
                 loadBagians(divisiKode, deptKode);
+            }
+        });
+
+        // When bagian changes, load seksis
+        bagianSelect.addEventListener('change', function() {
+            const divisiKode = divisiSelect.value;
+            const deptKode = departemenSelect.value;
+            const bagianKode = this.value;
+
+            // Reset seksi
+            const seksiSelect = document.getElementById('seksi');
+            seksiSelect.innerHTML = '<option value="">Pilih Seksi</option>';
+            seksiSelect.disabled = !bagianKode;
+
+            if (divisiKode && deptKode && bagianKode) {
+                loadSeksis(divisiKode, deptKode, bagianKode);
+            } else {
+                // Jika bagian di-reset, pastikan seksi disabled
+                seksiSelect.disabled = true;
             }
         });
 
@@ -2065,7 +3872,7 @@
             departemenSelect.disabled = true;
             departemenSelect.innerHTML = '<option value="">Memuat...</option>';
 
-            fetch('/karyawan/get-departemens', {
+            fetch(makeUrl('karyawan/get-departemens'), {
                     method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -2086,9 +3893,11 @@
                             option.textContent = dept.vcKodeDept + ' - ' + dept.vcNamaDept;
                             departemenSelect.appendChild(option);
                         });
+                        // Enable dropdown setelah data dimuat
                         departemenSelect.disabled = false;
                     } else {
                         departemenSelect.innerHTML = '<option value="">Tidak ada data</option>';
+                        departemenSelect.disabled = true;
                     }
                     // Panggil callback jika ada
                     if (callback) callback();
@@ -2096,6 +3905,7 @@
                 .catch(error => {
                     console.error('Error loading departemens:', error);
                     departemenSelect.innerHTML = '<option value="">Error memuat data</option>';
+                    departemenSelect.disabled = true;
                     // Panggil callback jika ada
                     if (callback) callback();
                 });
@@ -2105,7 +3915,7 @@
             bagianSelect.disabled = true;
             bagianSelect.innerHTML = '<option value="">Memuat...</option>';
 
-            fetch('/karyawan/get-bagians', {
+            fetch(makeUrl('karyawan/get-bagians'), {
                     method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -2127,9 +3937,11 @@
                             option.textContent = bagian.vcKodeBagian + ' - ' + bagian.vcNamaBagian;
                             bagianSelect.appendChild(option);
                         });
+                        // Enable dropdown setelah data dimuat
                         bagianSelect.disabled = false;
                     } else {
                         bagianSelect.innerHTML = '<option value="">Tidak ada data</option>';
+                        bagianSelect.disabled = true;
                     }
                     // Panggil callback jika ada
                     if (callback) callback();
@@ -2137,46 +3949,125 @@
                 .catch(error => {
                     console.error('Error loading bagians:', error);
                     bagianSelect.innerHTML = '<option value="">Error memuat data</option>';
+                    bagianSelect.disabled = true;
                     // Panggil callback jika ada
                     if (callback) callback();
                 });
         }
 
-        // Override populateForm to handle hierarchical dropdowns
-        const originalPopulateForm = populateForm;
-        populateForm = function(karyawan) {
-            // Call original populateForm first
-            originalPopulateForm(karyawan);
+        function loadSeksis(divisiKode, deptKode, bagianKode, callback) {
+            const seksiSelect = document.getElementById('seksi');
+            seksiSelect.disabled = true;
+            seksiSelect.innerHTML = '<option value="">Memuat...</option>';
 
-            // Handle hierarchical dropdowns dengan callback pattern
-            if (karyawan.Divisi) {
-                // Set divisi first
-                divisiSelect.value = karyawan.Divisi;
+            fetch(makeUrl('karyawan/get-seksis'), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        divisi: divisiKode,
+                        departemen: deptKode,
+                        bagian: bagianKode
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        seksiSelect.innerHTML = '<option value="">Pilih Seksi</option>';
+                        data.seksis.forEach(seksi => {
+                            const option = document.createElement('option');
+                            option.value = seksi.vcKodeSeksi;
+                            option.textContent = seksi.vcKodeSeksi + ' - ' + seksi.vcNamaSeksi;
+                            seksiSelect.appendChild(option);
+                        });
+                        // Enable dropdown setelah data dimuat
+                        seksiSelect.disabled = false;
+                    } else {
+                        seksiSelect.innerHTML = '<option value="">Tidak ada data</option>';
+                        seksiSelect.disabled = true;
+                    }
+                    // Panggil callback jika ada
+                    if (callback) callback();
+                })
+                .catch(error => {
+                    console.error('Error loading seksis:', error);
+                    seksiSelect.innerHTML = '<option value="">Error memuat data</option>';
+                    seksiSelect.disabled = true;
+                    // Panggil callback jika ada
+                    if (callback) callback();
+                });
+        }
 
-                // Load departemens dengan callback untuk set departemen setelah ter-load
-                if (karyawan.dept) {
-                    loadDepartemens(karyawan.Divisi, function() {
-                        // Set departemen setelah departemens ter-load
-                        if (departemenSelect && karyawan.dept) {
-                            departemenSelect.value = karyawan.dept;
+        // Load jabatans filtered by divisi
+        function loadJabatans(divisiKode, callback) {
+            jabatanSelect.disabled = true;
+            const currentValue = jabatanSelect.value; // Save current value
+            jabatanSelect.innerHTML = '<option value="">Memuat...</option>';
 
-                            // Load bagians dengan callback untuk set bagian setelah ter-load
-                            if (karyawan.vcKodeBagian) {
-                                loadBagians(karyawan.Divisi, karyawan.dept, function() {
-                                    // Set bagian setelah bagians ter-load
-                                    if (bagianSelect && karyawan.vcKodeBagian) {
-                                        bagianSelect.value = karyawan.vcKodeBagian;
-                                    }
-                                });
+            fetch(makeUrl('karyawan/get-jabatans'), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        divisi: divisiKode
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        jabatanSelect.innerHTML = '<option value="">Pilih Jabatan</option>';
+                        data.jabatans.forEach(jabatan => {
+                            const option = document.createElement('option');
+                            option.value = jabatan.vcKodeJabatan;
+                            option.textContent = jabatan.vcKodeJabatan + ' - ' + jabatan.vcNamaJabatan;
+                            jabatanSelect.appendChild(option);
+                        });
+                        // Restore previous value if it exists in the filtered list
+                        if (currentValue) {
+                            const optionExists = Array.from(jabatanSelect.options).some(opt => opt.value === currentValue);
+                            if (optionExists) {
+                                jabatanSelect.value = currentValue;
                             }
                         }
-                    });
-                } else {
-                    // Jika tidak ada departemen, tetap load departemens
-                    loadDepartemens(karyawan.Divisi);
+                        jabatanSelect.disabled = false;
+                    } else {
+                        jabatanSelect.innerHTML = '<option value="">Tidak ada data</option>';
+                        jabatanSelect.disabled = true;
+                    }
+                    // Panggil callback jika ada
+                    if (callback) callback();
+                })
+                .catch(error => {
+                    console.error('Error loading jabatans:', error);
+                    jabatanSelect.innerHTML = '<option value="">Error memuat data</option>';
+                    jabatanSelect.disabled = true;
+                    // Panggil callback jika ada
+                    if (callback) callback();
+                });
+        }
+
+        // Load all jabatans (when no divisi selected)
+        function loadAllJabatans(callback) {
+            jabatanSelect.innerHTML = '<option value="">Pilih Jabatan</option>';
+            initialJabatans.forEach(jabatan => {
+                if (jabatan.value) { // Skip empty option
+                    const option = document.createElement('option');
+                    option.value = jabatan.value;
+                    option.textContent = jabatan.text;
+                    jabatanSelect.appendChild(option);
                 }
-            }
-        };
+            });
+            // Panggil callback jika ada
+            if (callback) callback();
+        }
+
+
     });
 </script>
 @endpush

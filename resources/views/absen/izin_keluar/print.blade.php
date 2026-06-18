@@ -217,9 +217,9 @@
             <button class="btn-print" onclick="window.print()">
                 <i class="fas fa-print"></i> Print Surat Izin
             </button>
-            <a href="{{ route('izin-keluar.index') }}" style="margin-left: 10px; padding: 10px 20px; background-color: #6c757d; color: white; text-decoration: none; border-radius: 5px;">
-                <i class="fas fa-arrow-left"></i> Kembali
-            </a>
+            <button type="button" onclick="window.close()" style="margin-left: 10px; padding: 10px 20px; background-color: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                <i class="fas fa-times"></i> Close
+            </button>
         </div>
 
         <!-- Header -->
@@ -227,8 +227,24 @@
             <div class="logo-section">
                 <img src="{{ asset('img/logo-abn.png') }}" alt="ABN" class="logo-img">
             </div>
+            @php
+                // Tentukan jenis & tipe izin
+                $isPribadi = in_array($record->vcKodeIzin, ['Z003', 'Z004']);
+                $tipeIzin = $record->vcTipeIzin ?? null;
+
+                // Default judul
+                $printTitle = 'Ijin Keluar Komplek';
+
+                if ($isPribadi && $tipeIzin === 'Masuk Siang') {
+                    $printTitle = 'Surat Izin Masuk Siang';
+                } elseif ($isPribadi && $tipeIzin === 'Izin Biasa') {
+                    $printTitle = 'Surat Izin Keluar Komplek Kantor';
+                } elseif ($isPribadi && $tipeIzin === 'Pulang Cepat') {
+                    $printTitle = 'Surat Izin Pulang Cepat';
+                }
+            @endphp
             <div class="title-section">
-                <h1 class="title">IJIN KELUAR KOMPLEK</h1>
+                <h1 class="title">{{ $printTitle }}</h1>
             </div>
             <div class="no-section">
                 <div class="no-label">No. : {{ $record->vcCounter }}</div>
@@ -241,6 +257,7 @@
             // Tentukan jenis izin (Pribadi atau Dinas)
             $isPribadi = in_array($record->vcKodeIzin, ['Z003', 'Z004']);
             $jenisIzin = $isPribadi ? 'Pribadi' : 'Dinas';
+            $tipeIzin = $record->vcTipeIzin ?? null;
             @endphp
 
             <div class="form-row">
@@ -294,7 +311,16 @@
                 <div class="form-label">Tanggal</div>
                 <div class="form-row-time" style="flex: 1;">
                     <div class="form-value-time">{{ $record->dtTanggal ? $record->dtTanggal->format('d/m/Y') : '-' }}</div>
-                    <span class="time-label">Perkiraan Keluar : {{ $record->dtDari ? substr($record->dtDari, 0, 5) : '-' }} WIB</span>
+                    @php
+                        // Default: Perkiraan Keluar dari dtDari
+                        $perkiraanKeluar = $record->dtDari ? substr($record->dtDari, 0, 5) . ' WIB' : '-';
+
+                        // Khusus Pulang Cepat (Pribadi) → gunakan jam "Sampai"
+                        if ($isPribadi && $tipeIzin === 'Pulang Cepat') {
+                            $perkiraanKeluar = $record->dtSampai ? substr($record->dtSampai, 0, 5) . ' WIB' : '-';
+                        }
+                    @endphp
+                    <span class="time-label">Perkiraan Keluar : {{ $perkiraanKeluar }}</span>
                 </div>
             </div>
 
@@ -302,13 +328,24 @@
                 <div class="form-label">Perkiraan Kembali</div>
                 <div class="form-row-time" style="flex: 1;">
                     <div class="form-value-time">
-                        @if($record->dtSampai)
-                        {{ substr($record->dtSampai, 0, 5) }} WIB
+                        @if($isPribadi && ($tipeIzin === 'Masuk Siang' || $tipeIzin === 'Pulang Cepat'))
+                            {{-- Masuk Siang & Pulang Cepat: kolom Perkiraan Kembali dikosongkan --}}
+                            &nbsp;
                         @else
-                        Tidak Kembali
+                            @if($record->dtSampai)
+                                {{ substr($record->dtSampai, 0, 5) }} WIB
+                            @else
+                                Tidak Kembali
+                            @endif
                         @endif
                     </div>
-                    <span class="time-label">/ Tidak Kembali</span>
+                    <span class="time-label">
+                        @if($isPribadi && ($tipeIzin === 'Masuk Siang' || $tipeIzin === 'Pulang Cepat'))
+                            &nbsp;
+                        @else
+                            / Tidak Kembali
+                        @endif
+                    </span>
                 </div>
             </div>
 

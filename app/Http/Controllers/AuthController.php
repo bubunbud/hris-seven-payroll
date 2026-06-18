@@ -6,7 +6,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use App\Models\LoginHistory;
 use App\Models\User;
+use App\Models\UserSession;
 
 class AuthController extends Controller
 {
@@ -73,6 +75,8 @@ class AuthController extends Controller
         // Redirect ke dashboard sesuai konfigurasi user
         $request->session()->regenerate();
 
+        $this->recordLoginSession($request, $user);
+
         // Gunakan intended untuk menghormati redirect yang diminta sebelumnya
         // Jika tidak ada intended, gunakan dashboard route dari user
         $dashboardRoute = $user->getDashboardRoute();
@@ -84,6 +88,21 @@ class AuthController extends Controller
      */
     public function logout(Request $request)
     {
+        $user = Auth::user();
+        $sessionId = $request->session()->getId();
+
+        if ($user) {
+            LoginHistory::create([
+                'user_id' => $user->id,
+                'event' => 'logout',
+                'ip_address' => $request->ip(),
+                'user_agent' => $this->truncateUserAgent($request->userAgent()),
+                'created_at' => now(),
+            ]);
+        }
+
+        UserSession::where('session_id', $sessionId)->delete();
+
         Auth::logout();
 
         $request->session()->invalidate();
@@ -91,4 +110,37 @@ class AuthController extends Controller
 
         return redirect()->route('login');
     }
+
+    private function recordLoginSession(Request $request, User $user): void
+    {
+        $now = now();
+
+        UserSession::updateOrCreate(
+            ['session_id' => $request->session()->getId()],
+            [
+                'user_id' => $user->id,
+                'ip_address' => $request->ip(),
+                'user_agent' => $this->truncateUserAgent($request->userAgent()),
+                'last_activity_at' => $now,
+            ]
+        );
+
+        LoginHistory::create([
+            'user_id' => $user->id,
+            'event' => 'login',
+            'ip_address' => $request->ip(),
+            'user_agent' => $this->truncateUserAgent($request->userAgent()),
+            'created_at' => $now,
+        ]);
+    }
+
+    private function truncateUserAgent(?string $agent): ?string
+    {
+        if ($agent === null || $agent === '') {
+            return null;
+        }
+
+        return mb_substr($agent, 0, 512);
+    }
 }
+

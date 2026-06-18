@@ -7,6 +7,7 @@ use App\Models\Karyawan;
 use App\Traits\HariKerjaHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 
 class EditAbsensiController extends Controller
@@ -23,9 +24,48 @@ class EditAbsensiController extends Controller
         $endDate = $request->get('sampai_tanggal', Carbon::now()->endOfMonth()->format('Y-m-d'));
 
         // Get filter parameters
+        $search = $request->get('search'); // NIK / Nama (gabungan)
+        // Backward compatibility: jika masih ada parameter nik/nama, gunakan itu
         $nik = $request->get('nik');
         $nama = $request->get('nama');
+        if (!$search && ($nik || $nama)) {
+            // Jika ada parameter lama, gabungkan menjadi search
+            $searchParts = [];
+            if ($nik) $searchParts[] = $nik;
+            if ($nama) $searchParts[] = $nama;
+            $search = implode(', ', $searchParts);
+        }
         $group = $request->get('group', 'Semua Group');
+
+        // Load karyawan aktif untuk autocomplete lokal
+        $karyawans = Karyawan::where('vcAktif', '1')
+            ->whereNull('Tgl_Berhenti')
+            ->with(['divisi', 'bagian'])
+            ->orderBy('Nama')
+            ->get(['Nik', 'Nama', 'Divisi', 'vcKodeBagian']);
+
+        // Siapkan data sederhana untuk frontend (hindari logic berat di Blade)
+        $karyawanList = $karyawans->map(function ($k) {
+            $divisiNama = '-';
+            if ($k->divisi && isset($k->divisi->vcNamaDivisi)) {
+                $divisiNama = $k->divisi->vcNamaDivisi;
+            } elseif ($k->Divisi) {
+                $divisiNama = $k->Divisi;
+            }
+
+            $bagianNama = '-';
+            if ($k->bagian && isset($k->bagian->vcNamaBagian)) {
+                $bagianNama = $k->bagian->vcNamaBagian;
+            }
+
+            return [
+                'nik' => $k->Nik ?: '',
+                'nama' => $k->Nama ?: '',
+                'divisi' => $divisiNama,
+                'bagian' => $bagianNama,
+                'search' => strtolower(($k->Nik ?: '') . ' ' . ($k->Nama ?: '')),
+            ];
+        })->values();
 
         // Build query untuk absen dengan join ke karyawan
         $absenQuery = DB::table('t_absen')
@@ -53,11 +93,23 @@ class EditAbsensiController extends Controller
             );
 
         // Apply filters
-        if ($nik) {
-            $absenQuery->where('m_karyawan.Nik', 'like', '%' . $nik . '%');
-        }
-        if ($nama) {
-            $absenQuery->where('m_karyawan.Nama', 'like', '%' . $nama . '%');
+        if ($search) {
+            // Split by comma untuk multi pencarian
+            $searchTerms = preg_split('/,\s*/', trim($search));
+
+            $absenQuery->where(function ($q) use ($searchTerms) {
+                foreach ($searchTerms as $term) {
+                    if (!empty(trim($term))) {
+                        $term = trim($term);
+                        // Jika format "NIK - Nama", ambil NIK saja
+                        if (strpos($term, ' - ') !== false) {
+                            $term = explode(' - ', $term)[0];
+                        }
+                        $q->orWhere('m_karyawan.Nik', 'like', '%' . $term . '%')
+                            ->orWhere('m_karyawan.Nama', 'like', '%' . $term . '%');
+                    }
+                }
+            });
         }
         if ($group !== 'Semua Group') {
             $absenQuery->where('m_karyawan.Group_pegawai', $group);
@@ -147,10 +199,10 @@ class EditAbsensiController extends Controller
             'absens',
             'startDate',
             'endDate',
-            'nik',
-            'nama',
+            'search',
             'group',
-            'groups'
+            'groups',
+            'karyawanList'
         ));
     }
 
@@ -403,6 +455,69 @@ class EditAbsensiController extends Controller
             return redirect()->route('edit-absensi.create')
                 ->withInput()
                 ->with('error', 'Gagal menambahkan data absensi: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Delete absensi data
+     * Hanya bisa diakses oleh superadmin atau administrator
+     */
+    public function destroy(Request $request)
+    {
+        // Check authorization: hanya superadmin atau administrator yang bisa delete
+        $user = Auth::user();
+        if (!$user) {
+            return redirect()->route('edit-absensi.index')
+                ->with('error', 'Anda harus login terlebih dahulu.');
+        }
+
+        // Check role: superadmin atau admin (administrator)
+        $allowedRoles = ['superadmin', 'admin', 'Superadmin', 'Administrator'];
+        if (!$user->hasAnyRole($allowedRoles)) {
+            return redirect()->route('edit-absensi.index')
+                ->with('error', 'Anda tidak memiliki izin untuk menghapus data absensi. Hanya Superadmin atau Administrator yang dapat menghapus data.');
+        }
+
+        $tanggal = $request->get('tanggal');
+        $nik = $request->get('nik');
+
+        if (!$tanggal || !$nik) {
+            return redirect()->route('edit-absensi.index')
+                ->with('error', 'Parameter tanggal dan NIK harus diisi.');
+        }
+
+        // Pastikan tanggal dan nik adalah string
+        $tanggalStr = Carbon::parse($tanggal)->format('Y-m-d');
+        $nikStr = (string) $nik;
+
+        // Cek apakah data absensi ada
+        $absenExists = DB::table('t_absen')
+            ->where('dtTanggal', $tanggalStr)
+            ->where('vcNik', $nikStr)
+            ->exists();
+
+        if (!$absenExists) {
+            return redirect()->route('edit-absensi.index')
+                ->with('error', 'Data absensi tidak ditemukan.');
+        }
+
+        // Delete data absensi
+        try {
+            $deleted = DB::table('t_absen')
+                ->where('dtTanggal', $tanggalStr)
+                ->where('vcNik', $nikStr)
+                ->delete();
+
+            if ($deleted > 0) {
+                return redirect()->route('edit-absensi.index')
+                    ->with('success', 'Data absensi berhasil dihapus.');
+            } else {
+                return redirect()->route('edit-absensi.index')
+                    ->with('error', 'Gagal menghapus data absensi.');
+            }
+        } catch (\Exception $e) {
+            return redirect()->route('edit-absensi.index')
+                ->with('error', 'Terjadi kesalahan saat menghapus data: ' . $e->getMessage());
         }
     }
 

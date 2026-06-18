@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('m_shift_security')) {
+            return;
+        }
+
         Schema::create('m_shift_security', function (Blueprint $table) {
             $table->tinyInteger('vcKodeShift')->primary()->comment('1=Shift 1, 2=Shift 2, 3=Shift 3');
             $table->string('vcNamaShift', 20)->comment('Shift 1, Shift 2, Shift 3');

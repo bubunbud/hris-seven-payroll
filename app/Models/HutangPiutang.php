@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -46,6 +47,37 @@ class HutangPiutang extends Model
     public function masterHutangPiutang()
     {
         return $this->belongsTo(MasterHutangPiutang::class, 'vcJenis', 'vcJenis');
+    }
+
+    /**
+     * Primary key komposit (array) tidak didukung penuh oleh delete() bawaan Eloquent —
+     * memicu "Illegal offset type" di Laravel 10. Hapus eksplisit by keempat kolom kunci.
+     */
+    public function delete()
+    {
+        if (! $this->exists) {
+            return false;
+        }
+
+        $awal = $this->dtTanggalAwal instanceof Carbon
+            ? $this->dtTanggalAwal->format('Y-m-d')
+            : $this->dtTanggalAwal;
+        $akhir = $this->dtTanggalAkhir instanceof Carbon
+            ? $this->dtTanggalAkhir->format('Y-m-d')
+            : $this->dtTanggalAkhir;
+
+        $deleted = static::query()
+            ->where('dtTanggalAwal', $awal)
+            ->where('dtTanggalAkhir', $akhir)
+            ->where('vcNik', $this->vcNik)
+            ->where('vcJenis', $this->vcJenis)
+            ->delete() > 0;
+
+        if ($deleted) {
+            $this->exists = false;
+        }
+
+        return $deleted;
     }
 }
 

@@ -52,7 +52,7 @@ class MasterShiftSecurityController extends Controller
                 'vcNamaShift' => $request->vcNamaShift,
                 'dtJamMasuk' => $request->dtJamMasuk,
                 'dtJamPulang' => $request->dtJamPulang,
-                'isCrossDay' => $request->has('isCrossDay') ? true : false,
+                'isCrossDay' => $request->boolean('isCrossDay'),
                 'intDurasiJam' => $request->intDurasiJam,
                 'intToleransiMasuk' => $request->intToleransiMasuk,
                 'intToleransiPulang' => $request->intToleransiPulang,
@@ -61,6 +61,10 @@ class MasterShiftSecurityController extends Controller
                 'dtChange' => $now,
             ]);
 
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => true, 'message' => 'Master shift security berhasil ditambahkan!']);
+            }
+
             return redirect()->route('master-shift-security.index')
                 ->with('success', 'Master shift security berhasil ditambahkan!');
         } catch (\Exception $e) {
@@ -68,6 +72,9 @@ class MasterShiftSecurityController extends Controller
                 'trace' => $e->getTraceAsString(),
                 'request' => $request->all()
             ]);
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()], 422);
+            }
             return redirect()->back()
                 ->withInput()
                 ->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
@@ -75,11 +82,23 @@ class MasterShiftSecurityController extends Controller
     }
 
     /**
-     * Display the specified resource.
+     * Display the specified resource (untuk AJAX/modal).
      */
-    public function show(ShiftSecurity $shiftSecurity)
+    public function show($master_shift_security)
     {
-        return view('master.shift-security.show', compact('shiftSecurity'));
+        $shiftSecurity = ShiftSecurity::findOrFail($master_shift_security);
+        $data = [
+            'vcKodeShift' => $shiftSecurity->vcKodeShift,
+            'vcNamaShift' => $shiftSecurity->vcNamaShift,
+            'dtJamMasuk' => \Carbon\Carbon::parse($shiftSecurity->dtJamMasuk)->format('H:i'),
+            'dtJamPulang' => \Carbon\Carbon::parse($shiftSecurity->dtJamPulang)->format('H:i'),
+            'isCrossDay' => $shiftSecurity->isCrossDay,
+            'intDurasiJam' => (float) $shiftSecurity->intDurasiJam,
+            'intToleransiMasuk' => $shiftSecurity->intToleransiMasuk,
+            'intToleransiPulang' => $shiftSecurity->intToleransiPulang,
+            'vcKeterangan' => $shiftSecurity->vcKeterangan ?? '',
+        ];
+        return response()->json(['success' => true, 'shift' => $data]);
     }
 
     /**
@@ -114,13 +133,17 @@ class MasterShiftSecurityController extends Controller
                 'vcNamaShift' => $request->vcNamaShift,
                 'dtJamMasuk' => $request->dtJamMasuk,
                 'dtJamPulang' => $request->dtJamPulang,
-                'isCrossDay' => $request->has('isCrossDay') ? true : false,
+                'isCrossDay' => $request->boolean('isCrossDay'),
                 'intDurasiJam' => $request->intDurasiJam,
                 'intToleransiMasuk' => $request->intToleransiMasuk,
                 'intToleransiPulang' => $request->intToleransiPulang,
                 'vcKeterangan' => $request->vcKeterangan,
                 'dtChange' => Carbon::now(),
             ]);
+
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => true, 'message' => 'Master shift security berhasil diupdate!']);
+            }
 
             return redirect()->route('master-shift-security.index')
                 ->with('success', 'Master shift security berhasil diupdate!');
@@ -129,6 +152,9 @@ class MasterShiftSecurityController extends Controller
                 'trace' => $e->getTraceAsString(),
                 'request' => $request->all()
             ]);
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()], 422);
+            }
             return redirect()->back()
                 ->withInput()
                 ->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
@@ -149,18 +175,27 @@ class MasterShiftSecurityController extends Controller
                 ->count();
 
             if ($count > 0) {
-                return redirect()->back()
-                    ->with('error', 'Shift tidak dapat dihapus karena sudah digunakan di ' . $count . ' jadwal!');
+                $msg = 'Shift tidak dapat dihapus karena sudah digunakan di ' . $count . ' jadwal!';
+                if (request()->ajax() || request()->wantsJson()) {
+                    return response()->json(['success' => false, 'message' => $msg], 422);
+                }
+                return redirect()->back()->with('error', $msg);
             }
 
             $shiftSecurity->delete();
+
+            if (request()->ajax() || request()->wantsJson()) {
+                return response()->json(['success' => true, 'message' => 'Master shift security berhasil dihapus!']);
+            }
 
             return redirect()->route('master-shift-security.index')
                 ->with('success', 'Master shift security berhasil dihapus!');
         } catch (\Exception $e) {
             Log::error('Error deleting master shift security: ' . $e->getMessage());
-            return redirect()->back()
-                ->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            if (request()->ajax() || request()->wantsJson()) {
+                return response()->json(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()], 500);
+            }
+            return redirect()->back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
     }
 }

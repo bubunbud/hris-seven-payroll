@@ -6,6 +6,7 @@ use App\Models\Jabatan;
 use App\Models\Divisi;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class JabatanController extends Controller
 {
@@ -141,10 +142,25 @@ class JabatanController extends Controller
     public function destroy(string $id)
     {
         try {
-            $jabatan = Jabatan::findOrFail($id);
+            // Primary key adalah vcKodeJabatan (string), bukan auto-increment ID
+            $jabatan = Jabatan::find($id);
+            
+            if (!$jabatan) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data jabatan tidak ditemukan'
+                ], 404);
+            }
 
             // Cek apakah jabatan digunakan di tabel karyawan
-            $usedInKaryawan = DB::table('m_karyawan')->where('vcJabatan', $id)->exists();
+            // Field di m_karyawan adalah 'Jabat', bukan 'vcJabatan'
+            // Handle format "KODE -> NAMA" atau hanya "KODE"
+            $usedInKaryawan = DB::table('m_karyawan')
+                ->where(function($query) use ($id) {
+                    $query->where('Jabat', $id)
+                          ->orWhere('Jabat', 'like', $id . ' -> %');
+                })
+                ->exists();
 
             if ($usedInKaryawan) {
                 return response()->json([
@@ -160,6 +176,11 @@ class JabatanController extends Controller
                 'message' => 'Data jabatan berhasil dihapus'
             ]);
         } catch (\Exception $e) {
+            \Log::error('Error deleting jabatan: ' . $e->getMessage(), [
+                'id' => $id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Terjadi kesalahan: ' . $e->getMessage()

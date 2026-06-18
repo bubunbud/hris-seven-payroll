@@ -67,6 +67,7 @@
 
                                 @php
                                 $moduleLabels = [
+                                'dashboard' => 'Dashboard',
                                 'master-data' => 'Master Data',
                                 'absensi' => 'Absensi',
                                 'proses-gaji' => 'Proses Payroll',

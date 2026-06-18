@@ -84,7 +84,8 @@ class DivisiController extends Controller
 
         $divisi->update($data);
 
-        if ($request->ajax()) {
+        // Check if request wants JSON response (AJAX or API)
+        if ($request->ajax() || $request->wantsJson() || $request->expectsJson()) {
             return response()->json(['success' => true, 'message' => 'Divisi berhasil diperbarui.']);
         }
 

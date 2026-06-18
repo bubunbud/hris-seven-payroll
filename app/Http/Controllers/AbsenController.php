@@ -8,19 +8,20 @@ use App\Models\TidakMasuk;
 use App\Models\HariLibur;
 use App\Services\SecurityAbsensiService;
 use App\Traits\HariKerjaHelper;
+use App\Traits\TidakMasukOverlapHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class AbsenController extends Controller
 {
-    use HariKerjaHelper;
+    use HariKerjaHelper, TidakMasukOverlapHelper;
     public function index(Request $request)
     {
         // Tingkatkan memory limit dan timeout untuk handle data besar
         ini_set('memory_limit', '512M');
         set_time_limit(300); // 5 menit
-        
+
         // Default date range (current month)
         $startDate = $request->get('dari_tanggal', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('sampai_tanggal', Carbon::now()->endOfMonth()->format('Y-m-d'));
@@ -37,7 +38,7 @@ class AbsenController extends Controller
             if ($nama) $searchParts[] = $nama;
             $search = implode(', ', $searchParts);
         }
-        
+
         $tidakMasuk = $request->get('tidak_masuk');
         $absenTidakLengkap = $request->get('absen_tidak_lengkap');
         $hariKerjaNormal = $request->get('hari_kerja_normal');
@@ -83,7 +84,7 @@ class AbsenController extends Controller
             if ($search) {
                 // Split by comma untuk multi pencarian
                 $searchTerms = preg_split('/,\s*/', trim($search));
-                
+
                 $query->where(function ($q) use ($searchTerms) {
                     foreach ($searchTerms as $term) {
                         if (!empty(trim($term))) {
@@ -122,6 +123,7 @@ class AbsenController extends Controller
                 't_absen.dtJamKeluar',
                 't_absen.dtJamMasukLembur',
                 't_absen.dtJamKeluarLembur',
+                't_absen.vcketerangan',
                 'm_karyawan.Nama',
                 'm_karyawan.Divisi',
                 'm_karyawan.dept',
@@ -189,52 +191,13 @@ class AbsenController extends Controller
                 }
             });
 
-        // Expand tidak masuk per tanggal (di PHP tapi dengan optimasi)
-        $tidakMasukExpanded = [];
-        $filterStart = Carbon::parse($startDate);
-        $filterEnd = Carbon::parse($endDate);
-
-        foreach ($tidakMasukRecords as $tm) {
-            $current = Carbon::parse($tm->dtTanggalMulai);
-            $end = Carbon::parse($tm->dtTanggalSelesai);
-
-            // Batasi loop maksimal 365 hari untuk menghindari infinite loop
-            $maxDays = 365;
-            $dayCount = 0;
-
-            while ($current->lte($end) && $dayCount < $maxDays) {
-                // Skip jika di luar range filter
-                if ($current->lt($filterStart) || $current->gt($filterEnd)) {
-                    $current->addDay();
-                    $dayCount++;
-                    continue;
-                }
-
-                $tanggalStr = $current->format('Y-m-d');
-                $key = $tanggalStr . '_' . $tm->vcNik;
-
-                // Cek apakah sudah ada di absen, jika ada skip (prioritas absen)
-                if (!$absenExists->has($key)) {
-                    $tidakMasukExpanded[] = [
-                        'dtTanggal' => $tanggalStr,
-                        'vcNik' => $tm->vcNik,
-                        'Nama' => $tm->Nama,
-                        'Divisi' => $tm->Divisi,
-                        'vcKodeBagian' => $tm->vcKodeBagian,
-                        'vcNamaDivisi' => $tm->vcNamaDivisi,
-                        'vcNamaDept' => $tm->vcNamaDept ?? null,
-                        'vcNamaBagian' => $tm->vcNamaBagian,
-                        'vcKodeAbsen' => $tm->vcKodeAbsen,
-                        'jenis_absen_keterangan' => $tm->jenis_absen_keterangan,
-                        'vcKeterangan' => $tm->vcKeterangan,
-                        'source' => 'tidak_masuk',
-                    ];
-                }
-
-                $current->addDay();
-                $dayCount++;
-            }
-        }
+        // Expand tidak masuk: satu baris per NIK+tanggal (rentang terpendek jika overlap)
+        $tidakMasukExpanded = $this->expandTidakMasukUniquePerDay(
+            $tidakMasukRecords,
+            Carbon::parse($startDate),
+            Carbon::parse($endDate),
+            $absenExists
+        );
 
         // Ambil data absen (dengan pagination di database level)
         // Apply filters terlebih dahulu
@@ -275,108 +238,109 @@ class AbsenController extends Controller
             ->chunk(1000, function ($absensData) use (&$combinedData, $jadwalSecurity, $hariLiburList) {
                 // Tambahkan data absen per chunk
                 foreach ($absensData as $absen) {
-            // Untuk Security: tentukan shift aktual dan validasi
-            $shiftAktual = null;
-            $shiftTerjadwal = [];
-            $statusValidasi = null;
+                    // Untuk Security: tentukan shift aktual dan validasi
+                    $shiftAktual = null;
+                    $shiftTerjadwal = [];
+                    $statusValidasi = null;
 
-            if ($absen->Group_pegawai === 'Security') {
-                // Tentukan shift aktual dari jam masuk/pulang
-                $shiftAktual = SecurityAbsensiService::determineShiftFromTime(
-                    $absen->dtJamMasuk,
-                    $absen->dtJamKeluar,
-                    $absen->dtTanggal
-                );
+                    if ($absen->Group_pegawai === 'Security') {
+                        // Tentukan shift aktual dari jam masuk/pulang
+                        $shiftAktual = SecurityAbsensiService::determineShiftFromTime(
+                            $absen->dtJamMasuk,
+                            $absen->dtJamKeluar,
+                            $absen->dtTanggal
+                        );
 
-                // Ambil shift terjadwal dari collection
-                $key = $absen->vcNik . '_' . $absen->dtTanggal;
-                if ($jadwalSecurity->has($key)) {
-                    $shiftTerjadwal = $jadwalSecurity->get($key);
-                }
+                        // Ambil shift terjadwal dari collection
+                        $key = $absen->vcNik . '_' . $absen->dtTanggal;
+                        if ($jadwalSecurity->has($key)) {
+                            $shiftTerjadwal = $jadwalSecurity->get($key);
+                        }
 
-                // Validasi
-                $validasi = SecurityAbsensiService::validateAbsensiVsJadwal(
-                    $absen->vcNik,
-                    $absen->dtTanggal,
-                    $shiftAktual
-                );
-                $statusValidasi = $validasi['status'];
-            }
-
-            // Tentukan status HKN/KHL dengan mempertimbangkan tukar hari kerja
-            $tanggalObj = Carbon::parse($absen->dtTanggal);
-            $totalJam = $this->calculateTotalJam($absen->dtJamMasuk, $absen->dtJamKeluar, $absen->dtTanggal);
-            
-            // Gunakan helper untuk cek apakah hari kerja normal (mempertimbangkan tukar hari kerja)
-            $isHariKerjaNormal = $this->isHariKerjaNormal($absen->dtTanggal, $absen->vcNik);
-            $isHariLibur = !$isHariKerjaNormal;
-            
-            // Cek telat: jam masuk > jam shift masuk (hanya untuk hari kerja normal)
-            $isTelat = false;
-            if ($absen->dtJamMasuk && $absen->shift_masuk && $isHariKerjaNormal) {
-                try {
-                    $jamMasuk = substr((string) $absen->dtJamMasuk, 0, 5);
-                    $shiftMasuk = $absen->shift_masuk instanceof Carbon
-                        ? $absen->shift_masuk->format('H:i')
-                        : substr((string) $absen->shift_masuk, 0, 5);
-                    
-                    $tMasuk = $tanggalObj->copy()->setTimeFromTimeString($jamMasuk);
-                    $tShiftMasuk = $tanggalObj->copy()->setTimeFromTimeString($shiftMasuk);
-                    
-                    if ($tMasuk->greaterThan($tShiftMasuk)) {
-                        $isTelat = true;
+                        // Validasi
+                        $validasi = SecurityAbsensiService::validateAbsensiVsJadwal(
+                            $absen->vcNik,
+                            $absen->dtTanggal,
+                            $shiftAktual
+                        );
+                        $statusValidasi = $validasi['status'];
                     }
-                } catch (\Exception $e) {
-                    // Skip jika ada error parsing waktu
-                }
-            }
-            
-            // Tentukan status sesuai logika di view
-            $status = '';
-            if (!$absen->dtJamMasuk && !$absen->dtJamKeluar) {
-                $status = 'Tidak Masuk';
-            } elseif ($isTelat) {
-                // Telat: jam masuk > jam shift masuk (prioritas sebelum HKN)
-                $status = 'Telat';
-            } elseif (($absen->dtJamMasuk && !$absen->dtJamKeluar) || (!$absen->dtJamMasuk && $absen->dtJamKeluar)) {
-                // Absen tidak lengkap: hanya ada satu dari jam masuk/keluar
-                $status = 'ATL';
-            } elseif ($isHariLibur && ($absen->dtJamMasuk || $absen->dtJamKeluar || $absen->dtJamMasukLembur)) {
-                // KHL: Hari libur (weekend/holiday/tukar hari kerja) dan ada jam masuk/keluar/lembur
-                $status = 'KHL';
-            } elseif ($absen->dtJamMasuk && $absen->dtJamKeluar && $totalJam >= 8) {
-                // Hari kerja normal (ada jam masuk dan keluar, minimal 8 jam)
-                $status = 'HKN';
-            } elseif ($absen->dtJamMasuk && $absen->dtJamKeluar && $totalJam > 0 && $totalJam < 8) {
-                // HC: Ada jam masuk dan keluar tapi jam kerja kurang dari 8 jam
-                $status = 'HC';
-            } else {
-                // Lainnya (tidak ada jam masuk atau keluar)
-                $status = 'ATL';
-            }
 
-            $combinedData->push([
-                'dtTanggal' => $absen->dtTanggal,
-                'vcNik' => $absen->vcNik,
-                'Nama' => $absen->Nama,
-                'Divisi' => $absen->Divisi,
-                'vcKodeBagian' => $absen->vcKodeBagian,
-                'vcNamaDivisi' => $absen->vcNamaDivisi,
-                'vcNamaDept' => $absen->vcNamaDept ?? null,
-                'vcNamaBagian' => $absen->vcNamaBagian,
-                'Group_pegawai' => $absen->Group_pegawai,
-                'dtJamMasuk' => $absen->dtJamMasuk,
-                'dtJamKeluar' => $absen->dtJamKeluar,
-                'dtJamMasukLembur' => $absen->dtJamMasukLembur,
-                'dtJamKeluarLembur' => $absen->dtJamKeluarLembur,
-                'total_jam' => $totalJam,
-                'shift_masuk' => $absen->shift_masuk ?? null,
-                'shift_terjadwal' => $shiftTerjadwal,
-                'shift_aktual' => $shiftAktual,
-                'status_validasi' => $statusValidasi,
-                'status' => $status,
-                'source' => 'absen',
-            ]);
+                    // Tentukan status HKN/KHL dengan mempertimbangkan tukar hari kerja
+                    $tanggalObj = Carbon::parse($absen->dtTanggal);
+                    $totalJam = $this->calculateTotalJam($absen->dtJamMasuk, $absen->dtJamKeluar, $absen->dtTanggal);
+
+                    // Gunakan helper untuk cek apakah hari kerja normal (mempertimbangkan tukar hari kerja)
+                    $isHariKerjaNormal = $this->isHariKerjaNormal($absen->dtTanggal, $absen->vcNik);
+                    $isHariLibur = !$isHariKerjaNormal;
+
+                    // Cek telat: jam masuk > jam shift masuk (hanya untuk hari kerja normal)
+                    $isTelat = false;
+                    if ($absen->dtJamMasuk && $absen->shift_masuk && $isHariKerjaNormal) {
+                        try {
+                            $jamMasuk = substr((string) $absen->dtJamMasuk, 0, 5);
+                            $shiftMasuk = $absen->shift_masuk instanceof Carbon
+                                ? $absen->shift_masuk->format('H:i')
+                                : substr((string) $absen->shift_masuk, 0, 5);
+
+                            $tMasuk = $tanggalObj->copy()->setTimeFromTimeString($jamMasuk);
+                            $tShiftMasuk = $tanggalObj->copy()->setTimeFromTimeString($shiftMasuk);
+
+                            if ($tMasuk->greaterThan($tShiftMasuk)) {
+                                $isTelat = true;
+                            }
+                        } catch (\Exception $e) {
+                            // Skip jika ada error parsing waktu
+                        }
+                    }
+
+                    // Tentukan status sesuai logika di view
+                    $status = '';
+                    if (!$absen->dtJamMasuk && !$absen->dtJamKeluar) {
+                        $status = 'Tidak Masuk';
+                    } elseif ($isTelat) {
+                        // Telat: jam masuk > jam shift masuk (prioritas sebelum HKN)
+                        $status = 'Telat';
+                    } elseif (($absen->dtJamMasuk && !$absen->dtJamKeluar) || (!$absen->dtJamMasuk && $absen->dtJamKeluar)) {
+                        // Absen tidak lengkap: hanya ada satu dari jam masuk/keluar
+                        $status = 'ATL';
+                    } elseif ($isHariLibur && ($absen->dtJamMasuk || $absen->dtJamKeluar || $absen->dtJamMasukLembur)) {
+                        // KHL: Hari libur (weekend/holiday/tukar hari kerja) dan ada jam masuk/keluar/lembur
+                        $status = 'KHL';
+                    } elseif ($absen->dtJamMasuk && $absen->dtJamKeluar && $totalJam >= 8) {
+                        // Hari kerja normal (ada jam masuk dan keluar, minimal 8 jam)
+                        $status = 'HKN';
+                    } elseif ($absen->dtJamMasuk && $absen->dtJamKeluar && $totalJam > 0 && $totalJam < 8) {
+                        // HC: Ada jam masuk dan keluar tapi jam kerja kurang dari 8 jam
+                        $status = 'HC';
+                    } else {
+                        // Lainnya (tidak ada jam masuk atau keluar)
+                        $status = 'ATL';
+                    }
+
+                    $combinedData->push([
+                        'dtTanggal' => $absen->dtTanggal,
+                        'vcNik' => $absen->vcNik,
+                        'Nama' => $absen->Nama,
+                        'Divisi' => $absen->Divisi,
+                        'vcKodeBagian' => $absen->vcKodeBagian,
+                        'vcNamaDivisi' => $absen->vcNamaDivisi,
+                        'vcNamaDept' => $absen->vcNamaDept ?? null,
+                        'vcNamaBagian' => $absen->vcNamaBagian,
+                        'Group_pegawai' => $absen->Group_pegawai,
+                        'dtJamMasuk' => $absen->dtJamMasuk,
+                        'dtJamKeluar' => $absen->dtJamKeluar,
+                        'dtJamMasukLembur' => $absen->dtJamMasukLembur,
+                        'dtJamKeluarLembur' => $absen->dtJamKeluarLembur,
+                        'vcketerangan' => $absen->vcketerangan ?? null,
+                        'total_jam' => $totalJam,
+                        'shift_masuk' => $absen->shift_masuk ?? null,
+                        'shift_terjadwal' => $shiftTerjadwal,
+                        'shift_aktual' => $shiftAktual,
+                        'status_validasi' => $statusValidasi,
+                        'status' => $status,
+                        'source' => 'absen',
+                    ]);
                 }
             });
 
@@ -457,22 +421,19 @@ class AbsenController extends Controller
                 $status = $item['status'] ?? '';
                 return in_array($status, ['HKN', 'Telat', 'ATL', 'HC']);
             });
-        }
-        elseif ($kerjaHariLibur && $telat && !$hariKerjaNormal) {
+        } elseif ($kerjaHariLibur && $telat && !$hariKerjaNormal) {
             // KHL + Telat: KHL dan Telat
             $combinedData = $combinedData->filter(function ($item) {
                 $status = $item['status'] ?? '';
                 return in_array($status, ['KHL', 'Telat']);
             });
-        }
-        elseif ($hariKerjaNormal && $kerjaHariLibur && !$telat) {
+        } elseif ($hariKerjaNormal && $kerjaHariLibur && !$telat) {
             // HKN + KHL: HKN, Telat, ATL, HC, KHL
             $combinedData = $combinedData->filter(function ($item) {
                 $status = $item['status'] ?? '';
                 return in_array($status, ['HKN', 'Telat', 'ATL', 'HC', 'KHL']);
             });
-        }
-        elseif ($hariKerjaNormal && $kerjaHariLibur && $telat) {
+        } elseif ($hariKerjaNormal && $kerjaHariLibur && $telat) {
             // Semua checked: tampilkan semua
             // Tidak ada filter
         }
@@ -538,7 +499,7 @@ class AbsenController extends Controller
         // Same logic as index but without pagination
         ini_set('memory_limit', '512M');
         set_time_limit(300);
-        
+
         $startDate = $request->get('dari_tanggal', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('sampai_tanggal', Carbon::now()->endOfMonth()->format('Y-m-d'));
 
@@ -551,7 +512,7 @@ class AbsenController extends Controller
             if ($nama) $searchParts[] = $nama;
             $search = implode(', ', $searchParts);
         }
-        
+
         $tidakMasuk = $request->get('tidak_masuk');
         $absenTidakLengkap = $request->get('absen_tidak_lengkap');
         $hariKerjaNormal = $request->get('hari_kerja_normal');
@@ -600,6 +561,7 @@ class AbsenController extends Controller
                 't_absen.dtJamKeluar',
                 't_absen.dtJamMasukLembur',
                 't_absen.dtJamKeluarLembur',
+                't_absen.vcketerangan',
                 'm_karyawan.Nama',
                 'm_karyawan.Divisi',
                 'm_karyawan.dept',
@@ -661,47 +623,12 @@ class AbsenController extends Controller
                 }
             });
 
-        $tidakMasukExpanded = [];
-        $filterStart = Carbon::parse($startDate);
-        $filterEnd = Carbon::parse($endDate);
-
-        foreach ($tidakMasukRecords as $tm) {
-            $current = Carbon::parse($tm->dtTanggalMulai);
-            $end = Carbon::parse($tm->dtTanggalSelesai);
-            $maxDays = 365;
-            $dayCount = 0;
-
-            while ($current->lte($end) && $dayCount < $maxDays) {
-                if ($current->lt($filterStart) || $current->gt($filterEnd)) {
-                    $current->addDay();
-                    $dayCount++;
-                    continue;
-                }
-
-                $tanggalStr = $current->format('Y-m-d');
-                $key = $tanggalStr . '_' . $tm->vcNik;
-
-                if (!$absenExists->has($key)) {
-                    $tidakMasukExpanded[] = [
-                        'dtTanggal' => $tanggalStr,
-                        'vcNik' => $tm->vcNik,
-                        'Nama' => $tm->Nama,
-                        'Divisi' => $tm->Divisi,
-                        'vcKodeBagian' => $tm->vcKodeBagian,
-                        'vcNamaDivisi' => $tm->vcNamaDivisi,
-                        'vcNamaDept' => $tm->vcNamaDept ?? null,
-                        'vcNamaBagian' => $tm->vcNamaBagian,
-                        'vcKodeAbsen' => $tm->vcKodeAbsen,
-                        'jenis_absen_keterangan' => $tm->jenis_absen_keterangan,
-                        'vcKeterangan' => $tm->vcKeterangan,
-                        'source' => 'tidak_masuk',
-                    ];
-                }
-
-                $current->addDay();
-                $dayCount++;
-            }
-        }
+        $tidakMasukExpanded = $this->expandTidakMasukUniquePerDay(
+            $tidakMasukRecords,
+            Carbon::parse($startDate),
+            Carbon::parse($endDate),
+            $absenExists
+        );
 
         $jadwalSecurity = DB::table('t_jadwal_shift_security')
             ->whereBetween('dtTanggal', [$startDate, $endDate])
@@ -745,10 +672,10 @@ class AbsenController extends Controller
 
                     $tanggalObj = Carbon::parse($absen->dtTanggal);
                     $totalJam = $this->calculateTotalJam($absen->dtJamMasuk, $absen->dtJamKeluar, $absen->dtTanggal);
-                    
+
                     $isHariKerjaNormal = $this->isHariKerjaNormal($absen->dtTanggal, $absen->vcNik);
                     $isHariLibur = !$isHariKerjaNormal;
-                    
+
                     $isTelat = false;
                     if ($absen->dtJamMasuk && $absen->shift_masuk && $isHariKerjaNormal) {
                         try {
@@ -756,17 +683,17 @@ class AbsenController extends Controller
                             $shiftMasuk = $absen->shift_masuk instanceof Carbon
                                 ? $absen->shift_masuk->format('H:i')
                                 : substr((string) $absen->shift_masuk, 0, 5);
-                            
+
                             $tMasuk = $tanggalObj->copy()->setTimeFromTimeString($jamMasuk);
                             $tShiftMasuk = $tanggalObj->copy()->setTimeFromTimeString($shiftMasuk);
-                            
+
                             if ($tMasuk->greaterThan($tShiftMasuk)) {
                                 $isTelat = true;
                             }
                         } catch (\Exception $e) {
                         }
                     }
-                    
+
                     $status = '';
                     if (!$absen->dtJamMasuk && !$absen->dtJamKeluar) {
                         $status = 'Tidak Masuk';
@@ -798,6 +725,7 @@ class AbsenController extends Controller
                         'dtJamKeluar' => $absen->dtJamKeluar,
                         'dtJamMasukLembur' => $absen->dtJamMasukLembur,
                         'dtJamKeluarLembur' => $absen->dtJamKeluarLembur,
+                        'vcketerangan' => $absen->vcketerangan ?? null,
                         'total_jam' => $totalJam,
                         'shift_masuk' => $absen->shift_masuk ?? null,
                         'shift_terjadwal' => $shiftTerjadwal,
