@@ -164,7 +164,6 @@
         width: 18%;
         vertical-align: top;
         margin-right: 1%;
-        text-align: center;
     }
 
     .signature-block .signature-line {
@@ -379,7 +378,7 @@
                     <td class="text-right">{{ number_format($bagianTotal['jam_lembur_jm1'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($bagianTotal['jam_lembur_jm2'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($bagianTotal['jam_lembur_jm3'], 1, ',', '.') }}</td>
-                    <td class="text-right">{{ number_format($bagianTotal['jam_lembur_jm4'], 1, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($bagianTotal['jam_lembur_jm4'] ?? 0, 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($bagianTotal['selisih_upah'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($bagianTotal['upah_lembur'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($bagianPersenLembur, 2, ',', '.') }}</td>
@@ -409,7 +408,7 @@
                     <td class="text-right">{{ number_format($deptTotal['jam_lembur_jm1'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($deptTotal['jam_lembur_jm2'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($deptTotal['jam_lembur_jm3'], 1, ',', '.') }}</td>
-                    <td class="text-right">{{ number_format($deptTotal['jam_lembur_jm4'], 1, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($deptTotal['jam_lembur_jm4'] ?? 0, 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($deptTotal['selisih_upah'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($deptTotal['upah_lembur'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($deptPersenLembur, 2, ',', '.') }}</td>
@@ -439,7 +438,7 @@
                     <td class="text-right">{{ number_format($divisiTotal['jam_lembur_jm1'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($divisiTotal['jam_lembur_jm2'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($divisiTotal['jam_lembur_jm3'], 1, ',', '.') }}</td>
-                    <td class="text-right">{{ number_format($divisiTotal['jam_lembur_jm4'], 1, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($divisiTotal['jam_lembur_jm4'] ?? 0, 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($divisiTotal['selisih_upah'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($divisiTotal['upah_lembur'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($divisiPersenLembur, 2, ',', '.') }}</td>
@@ -473,7 +472,7 @@
                     <td class="text-right">{{ number_format($grandTotal['jam_lembur_jm1'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['jam_lembur_jm2'], 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['jam_lembur_jm3'], 1, ',', '.') }}</td>
-                    <td class="text-right">{{ number_format($grandTotal['jam_lembur_jm4'], 1, ',', '.') }}</td>
+                    <td class="text-right">{{ number_format($grandTotal['jam_lembur_jm4'] ?? 0, 1, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['selisih_upah'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandTotal['upah_lembur'], 0, ',', '.') }}</td>
                     <td class="text-right">{{ number_format($grandPersenLembur, 2, ',', '.') }}</td>
@@ -495,7 +494,7 @@
                 <p>Bandung Barat, {{ \Carbon\Carbon::now()->format('d F Y') }}</p>
             </div>
 
-            <!-- Caption Row (di bawah tempat, tanggal) -->
+            <!-- Caption Row -->
             <div style="margin-top: 30px; display: flex; justify-content: space-around; align-items: center;">
                 <div class="signature-block">
                     <p style="margin: 0; text-align: center;"><strong>Dibuat Oleh,</strong></p>
@@ -514,22 +513,22 @@
                 </div>
             </div>
 
-            <!-- Nama Penandatangan Row (di atas garis) -->
+            <!-- Nama Penandatangan Row -->
             <div style="margin-top: 70px; display: flex; justify-content: space-around; align-items: flex-end;">
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vcStaff ? $divisiData->vcStaff : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcStaff ? $divisiData->vcStaff : '' }}</p>
                 </div>
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vcKeuangan ? $divisiData->vcKeuangan : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcKeuangan ? $divisiData->vcKeuangan : '' }}</p>
                 </div>
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vcKabag ? $divisiData->vcKabag : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcKabag ? $divisiData->vcKabag : '' }}</p>
                 </div>
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vPPIC ? $divisiData->vPPIC : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcManagerFinAcc ? $divisiData->vcManagerFinAcc : '' }}</p>
                 </div>
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vcPlantManager ? $divisiData->vcPlantManager : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vPPIC ? $divisiData->vPPIC : '' }}</p>
                 </div>
             </div>
 
@@ -552,7 +551,7 @@
                 </div>
             </div>
 
-            <!-- Jabatan Row (di bawah garis) -->
+            <!-- Jabatan Row -->
             <div style="margin-top: -45px; display: flex; justify-content: space-around; align-items: flex-start;">
                 <div class="signature-block">
                     <p style="margin: 0; text-align: center; padding-top: 0;">Staff Payroll</p>
@@ -564,10 +563,10 @@
                     <p style="margin: 0; text-align: center; padding-top: 0;">Manager / Ka. Dept</p>
                 </div>
                 <div class="signature-block">
-                    <p style="margin: 0; text-align: center; padding-top: 0;">Direktur / General Manager</p>
+                    <p style="margin: 0; text-align: center; padding-top: 0;">Sr. Mgr. Fincount</p>
                 </div>
                 <div class="signature-block">
-                    <p style="margin: 0; text-align: center; padding-top: 0;">General Manager / Direktur</p>
+                    <p style="margin: 0; text-align: center; padding-top: 0;">Direktur / General Manager</p>
                 </div>
             </div>
         </div>

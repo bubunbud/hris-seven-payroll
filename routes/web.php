@@ -43,6 +43,10 @@ use App\Http\Controllers\BiayaPerjalananDinasController;
 use App\Http\Controllers\SeksiController;
 use App\Http\Controllers\TarikDataAbsensiController;
 use App\Http\Controllers\TarikDataAbsensiApiController;
+use App\Http\Controllers\TarikDataAbsensiSupabaseController;
+use App\Http\Controllers\TarikDataLeaveSupabaseController;
+use App\Http\Controllers\MesinFingerprintController;
+use App\Http\Controllers\TarikDataFingerprintController;
 use App\Http\Controllers\TarikDataIzinController;
 use App\Http\Controllers\TarikDataTidakMasukController;
 use App\Http\Controllers\ListPengajuanCutiApiController;
@@ -432,7 +436,7 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // Settings Routes (permission-based: group atau granular)
-    Route::middleware(['permission:view-settings,view-tarik-data-absensi,view-tarik-data-absensi-api,view-tarik-data-izin,view-tarik-data-tidak-masuk,view-list-pengajuan-cuti-api,view-list-pengajuan-izin-api,view-tarik-data-hutang-piutang,view-logs,view-login-activity,manage-users,manage-roles,manage-permissions'])->group(function () {
+    Route::middleware(['permission:view-settings,view-tarik-data-absensi,view-tarik-data-absensi-api,view-tarik-data-absensi-supabase,view-tarik-data-leave-supabase,view-tarik-data-fingerprint,view-mesin-fingerprint,view-tarik-data-izin,view-tarik-data-tidak-masuk,view-list-pengajuan-cuti-api,view-list-pengajuan-izin-api,view-tarik-data-hutang-piutang,view-logs,view-login-activity,manage-users,manage-roles,manage-permissions'])->group(function () {
         Route::middleware(['permission:view-settings,view-tarik-data-absensi'])->group(function () {
             Route::get('tarik-data-absensi', [TarikDataAbsensiController::class, 'index'])->name('tarik-data-absensi.index');
             Route::post('tarik-data-absensi/pull', [TarikDataAbsensiController::class, 'pullData'])->name('tarik-data-absensi.pull');
@@ -440,6 +444,29 @@ Route::middleware(['auth'])->group(function () {
         Route::middleware(['permission:view-settings,view-tarik-data-absensi-api'])->group(function () {
             Route::get('tarik-data-absensi-api', [TarikDataAbsensiApiController::class, 'index'])->name('tarik-data-absensi-api.index');
             Route::post('tarik-data-absensi-api/pull', [TarikDataAbsensiApiController::class, 'pullData'])->name('tarik-data-absensi-api.pull');
+        });
+        Route::middleware(['permission:view-settings,view-tarik-data-absensi-supabase'])->group(function () {
+            Route::get('tarik-data-absensi-supabase', [TarikDataAbsensiSupabaseController::class, 'index'])->name('tarik-data-absensi-supabase.index');
+            Route::post('tarik-data-absensi-supabase/pull', [TarikDataAbsensiSupabaseController::class, 'pull'])->name('tarik-data-absensi-supabase.pull');
+            Route::post('tarik-data-absensi-supabase/save', [TarikDataAbsensiSupabaseController::class, 'save'])->name('tarik-data-absensi-supabase.save');
+        });
+        Route::middleware(['permission:view-settings,view-tarik-data-leave-supabase'])->group(function () {
+            Route::get('tarik-data-leave-supabase', [TarikDataLeaveSupabaseController::class, 'index'])->name('tarik-data-leave-supabase.index');
+            Route::post('tarik-data-leave-supabase/pull', [TarikDataLeaveSupabaseController::class, 'pull'])->name('tarik-data-leave-supabase.pull');
+            Route::post('tarik-data-leave-supabase/save', [TarikDataLeaveSupabaseController::class, 'save'])->name('tarik-data-leave-supabase.save');
+        });
+        Route::middleware(['permission:view-settings,view-mesin-fingerprint'])->group(function () {
+            Route::get('mesin-fingerprint', [MesinFingerprintController::class, 'index'])->name('mesin-fingerprint.index');
+            Route::post('mesin-fingerprint', [MesinFingerprintController::class, 'store'])->name('mesin-fingerprint.store');
+            Route::get('mesin-fingerprint/{id}', [MesinFingerprintController::class, 'show'])->name('mesin-fingerprint.show');
+            Route::put('mesin-fingerprint/{id}', [MesinFingerprintController::class, 'update'])->name('mesin-fingerprint.update');
+            Route::delete('mesin-fingerprint/{id}', [MesinFingerprintController::class, 'destroy'])->name('mesin-fingerprint.destroy');
+            Route::post('mesin-fingerprint/{id}/test-connection', [MesinFingerprintController::class, 'testConnection'])->name('mesin-fingerprint.test-connection');
+        });
+        Route::middleware(['permission:view-settings,view-tarik-data-fingerprint'])->group(function () {
+            Route::get('tarik-data-fingerprint', [TarikDataFingerprintController::class, 'index'])->name('tarik-data-fingerprint.index');
+            Route::post('tarik-data-fingerprint/pull', [TarikDataFingerprintController::class, 'pull'])->name('tarik-data-fingerprint.pull');
+            Route::post('tarik-data-fingerprint/save', [TarikDataFingerprintController::class, 'save'])->name('tarik-data-fingerprint.save');
         });
         Route::middleware(['permission:view-settings,view-tarik-data-izin'])->group(function () {
             Route::get('tarik-data-izin', [TarikDataIzinController::class, 'index'])->name('tarik-data-izin.index');

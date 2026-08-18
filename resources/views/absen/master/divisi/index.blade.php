@@ -127,6 +127,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form id="addDivisiForm">
+                @csrf
                 <div class="modal-body">
                     <div class="row">
                         <div class="col-md-6">
@@ -221,12 +222,18 @@
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="vPPIC" class="form-label">Direktur / General Manager</label>
-                                <input type="text" class="form-control" id="vPPIC" name="vPPIC" placeholder="Nama Direktur / General Manager">
+                                <label for="vcManagerFinAcc" class="form-label">Manager Fin-Acc</label>
+                                <input type="text" class="form-control" id="vcManagerFinAcc" name="vcManagerFinAcc" placeholder="Nama Manager Fin-Acc">
                             </div>
                         </div>
                     </div>
                     <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="vPPIC" class="form-label">Direktur / General Manager</label>
+                                <input type="text" class="form-control" id="vPPIC" name="vPPIC" placeholder="Nama Direktur / General Manager">
+                            </div>
+                        </div>
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="vcPlantManager" class="form-label">General Manager / Direktur</label>
@@ -257,6 +264,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form id="editDivisiForm">
+                @csrf
                 <input type="hidden" id="edit_kode_divisi" name="vcKodeDivisi">
                 <div class="modal-body">
                     <div class="row">
@@ -346,12 +354,18 @@
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="edit_vPPIC" class="form-label">Direktur / General Manager</label>
-                                <input type="text" class="form-control" id="edit_vPPIC" name="vPPIC" placeholder="Nama Direktur / General Manager">
+                                <label for="edit_vcManagerFinAcc" class="form-label">Manager Fin-Acc</label>
+                                <input type="text" class="form-control" id="edit_vcManagerFinAcc" name="vcManagerFinAcc" placeholder="Nama Manager Fin-Acc">
                             </div>
                         </div>
                     </div>
                     <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit_vPPIC" class="form-label">Direktur / General Manager</label>
+                                <input type="text" class="form-control" id="edit_vPPIC" name="vPPIC" placeholder="Nama Direktur / General Manager">
+                            </div>
+                        </div>
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="edit_vcPlantManager" class="form-label">General Manager / Direktur</label>
@@ -420,6 +434,7 @@
                         document.getElementById('edit_vcStaff').value = data.vcStaff || '';
                         document.getElementById('edit_vcKeuangan').value = data.vcKeuangan || '';
                         document.getElementById('edit_vcKabag').value = data.vcKabag || '';
+                        document.getElementById('edit_vcManagerFinAcc').value = data.vcManagerFinAcc || '';
                         document.getElementById('edit_vPPIC').value = data.vPPIC || '';
                         document.getElementById('edit_vcPlantManager').value = data.vcPlantManager || '';
 
@@ -503,34 +518,59 @@
         document.getElementById('editDivisiForm').addEventListener('submit', function(e) {
             e.preventDefault();
 
-            const formData = new FormData(this);
-            const data = Object.fromEntries(formData);
+            if (!selectedDivisiId) {
+                alert('Pilih divisi terlebih dahulu.');
+                return;
+            }
 
-            // Convert checkboxes to boolean
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                || document.querySelector('#editDivisiForm input[name="_token"]')?.value;
+
+            if (!csrfToken) {
+                alert('Sesi habis. Silakan refresh halaman dan coba lagi.');
+                return;
+            }
+
+            const formData = new FormData(this);
+
             const days = ['vcSenin', 'vcSelasa', 'vcRabu', 'vcKamis', 'vcJumat', 'vcSabtu', 'vcMinggu'];
             days.forEach(day => {
-                data[day] = formData.has(day) ? 1 : 0;
+                formData.set(day, formData.has(day) ? 1 : 0);
             });
 
-            fetch(`/divisi/${selectedDivisiId}`, {
-                    method: 'PUT',
+            formData.set('_method', 'PUT');
+            formData.set('_token', csrfToken);
+
+            fetch(`/divisi/${encodeURIComponent(selectedDivisiId)}`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
                     headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                        'Content-Type': 'application/json'
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
                     },
-                    body: JSON.stringify(data)
+                    body: formData
                 })
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        return response.text().then(text => {
+                            console.error('Error response:', text);
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        });
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (data.success) {
+                        alert(data.message || 'Divisi berhasil diperbarui.');
                         location.reload();
                     } else {
-                        alert('Gagal mengupdate data');
+                        alert(data.message || 'Gagal mengupdate data');
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Terjadi kesalahan');
+                    alert('Terjadi kesalahan: ' + error.message);
                 });
         });
     });

@@ -633,8 +633,12 @@ class StatistikAbsensiController extends Controller
                         // Jika jam sampai lebih besar dari jam pulang shift, berarti melewati tengah malam (tidak mungkin untuk pulang cepat)
                         // Tapi untuk aman, kita hitung selisihnya
                         if ($tSampai->lessThan($tShiftPulang)) {
-                            // Hitung selisih dalam menit, lalu konversi ke jam
                             $menit = $tSampai->diffInMinutes($tShiftPulang, true);
+                            $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
+                            $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
+                            if ($tSampai->lt($lunchEnd) && $tShiftPulang->gt($lunchStart)) {
+                                $menit = max(0, $menit - 60);
+                            }
                             $jamPulangCepat = round($menit / 60, 2);
                         }
                     }

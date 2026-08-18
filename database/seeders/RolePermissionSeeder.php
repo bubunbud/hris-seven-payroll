@@ -121,6 +121,10 @@ class RolePermissionSeeder extends Seeder
             // Settings - Granular Permissions
             ['name' => 'View Tarik Data Absensi', 'slug' => 'view-tarik-data-absensi', 'module' => 'settings', 'description' => 'Melihat Tarik Data Absensi'],
             ['name' => 'View Tarik Data Absensi API', 'slug' => 'view-tarik-data-absensi-api', 'module' => 'settings', 'description' => 'Melihat Tarik Data Absensi dari API HRIS eksternal'],
+            ['name' => 'View Master Mesin Fingerprint', 'slug' => 'view-mesin-fingerprint', 'module' => 'settings', 'description' => 'Melihat dan mengelola master mesin fingerprint'],
+            ['name' => 'View Tarik Data Fingerprint', 'slug' => 'view-tarik-data-fingerprint', 'module' => 'settings', 'description' => 'Melihat dan menarik data absensi dari mesin fingerprint'],
+            ['name' => 'View Tarik Data Absensi Supabase', 'slug' => 'view-tarik-data-absensi-supabase', 'module' => 'settings', 'description' => 'Melihat dan menarik data absensi dari Supabase REST API'],
+            ['name' => 'View Tarik Data Izin/Sakit/Cuti Supabase', 'slug' => 'view-tarik-data-leave-supabase', 'module' => 'settings', 'description' => 'Melihat dan menarik data izin, sakit, cuti dari Supabase leave_requests'],
             ['name' => 'View Tarik Data Izin', 'slug' => 'view-tarik-data-izin', 'module' => 'settings', 'description' => 'Melihat Tarik Data Izin'],
             ['name' => 'View Tarik Data Tidak Masuk', 'slug' => 'view-tarik-data-tidak-masuk', 'module' => 'settings', 'description' => 'Melihat Tarik Data Tidak Masuk'],
             ['name' => 'View List Pengajuan Cuti API', 'slug' => 'view-list-pengajuan-cuti-api', 'module' => 'settings', 'description' => 'Melihat List Pengajuan Cuti dari API (feeder cuti)'],

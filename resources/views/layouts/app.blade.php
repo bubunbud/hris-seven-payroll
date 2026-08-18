@@ -510,6 +510,10 @@
                 $hasSettingsMenu = $sidebarUser->hasMenuPermission('view-settings', [
                 'view-tarik-data-absensi',
                 'view-tarik-data-absensi-api',
+                'view-tarik-data-absensi-supabase',
+                'view-tarik-data-leave-supabase',
+                'view-mesin-fingerprint',
+                'view-tarik-data-fingerprint',
                 'view-tarik-data-izin',
                 'view-tarik-data-tidak-masuk',
                 'view-list-pengajuan-cuti-api',
@@ -535,6 +539,18 @@
                             @endif
                             @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-tarik-data-absensi-api'))
                             <li><a href="{{ route('tarik-data-absensi-api.index') }}">Tarik Data Absensi API</a></li>
+                            @endif
+                            @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-tarik-data-absensi-supabase'))
+                            <li><a href="{{ route('tarik-data-absensi-supabase.index') }}">Tarik Data Absensi Supabase</a></li>
+                            @endif
+                            @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-tarik-data-leave-supabase'))
+                            <li><a href="{{ route('tarik-data-leave-supabase.index') }}">Tarik Data Izin/Cuti Supabase</a></li>
+                            @endif
+                            @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-mesin-fingerprint'))
+                            <li><a href="{{ route('mesin-fingerprint.index') }}">Master Mesin Fingerprint</a></li>
+                            @endif
+                            @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-tarik-data-fingerprint'))
+                            <li><a href="{{ route('tarik-data-fingerprint.index') }}">Tarik Data Fingerprint</a></li>
                             @endif
                             @if($sidebarUser->hasPermission('view-settings') || $sidebarUser->hasPermission('view-tarik-data-izin'))
                             <li><a href="{{ route('tarik-data-izin.index') }}">Tarik Data Izin</a></li>

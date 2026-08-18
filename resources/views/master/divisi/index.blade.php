@@ -133,6 +133,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form id="addDivisiForm">
+                @csrf
                 <div class="modal-body">
                     <div class="row">
                         <div class="col-md-6">
@@ -227,12 +228,18 @@
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="vPPIC" class="form-label">Direktur / General Manager</label>
-                                <input type="text" class="form-control" id="vPPIC" name="vPPIC" placeholder="Nama Direktur / General Manager">
+                                <label for="vcManagerFinAcc" class="form-label">Manager Fin-Acc</label>
+                                <input type="text" class="form-control" id="vcManagerFinAcc" name="vcManagerFinAcc" placeholder="Nama Manager Fin-Acc">
                             </div>
                         </div>
                     </div>
                     <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="vPPIC" class="form-label">Direktur / General Manager</label>
+                                <input type="text" class="form-control" id="vPPIC" name="vPPIC" placeholder="Nama Direktur / General Manager">
+                            </div>
+                        </div>
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="vcPlantManager" class="form-label">General Manager / Direktur</label>
@@ -285,6 +292,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form id="editDivisiForm">
+                @csrf
                 <input type="hidden" id="edit_kode_divisi" name="vcKodeDivisi">
                 <div class="modal-body">
                     <div class="row">
@@ -374,12 +382,18 @@
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="edit_vPPIC" class="form-label">Direktur / General Manager</label>
-                                <input type="text" class="form-control" id="edit_vPPIC" name="vPPIC" placeholder="Nama Direktur / General Manager">
+                                <label for="edit_vcManagerFinAcc" class="form-label">Manager Fin-Acc</label>
+                                <input type="text" class="form-control" id="edit_vcManagerFinAcc" name="vcManagerFinAcc" placeholder="Nama Manager Fin-Acc">
                             </div>
                         </div>
                     </div>
                     <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit_vPPIC" class="form-label">Direktur / General Manager</label>
+                                <input type="text" class="form-control" id="edit_vPPIC" name="vPPIC" placeholder="Nama Direktur / General Manager">
+                            </div>
+                        </div>
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="edit_vcPlantManager" class="form-label">General Manager / Direktur</label>
@@ -470,6 +484,7 @@
                         document.getElementById('edit_vcStaff').value = data.vcStaff || '';
                         document.getElementById('edit_vcKeuangan').value = data.vcKeuangan || '';
                         document.getElementById('edit_vcKabag').value = data.vcKabag || '';
+                        document.getElementById('edit_vcManagerFinAcc').value = data.vcManagerFinAcc || '';
                         document.getElementById('edit_vPPIC').value = data.vPPIC || '';
                         document.getElementById('edit_vcPlantManager').value = data.vcPlantManager || '';
                         
@@ -558,6 +573,19 @@
         document.getElementById('editDivisiForm').addEventListener('submit', function(e) {
             e.preventDefault();
 
+            if (!selectedDivisiId) {
+                alert('Pilih divisi terlebih dahulu.');
+                return;
+            }
+
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                || document.querySelector('#editDivisiForm input[name="_token"]')?.value;
+
+            if (!csrfToken) {
+                alert('Sesi habis. Silakan refresh halaman dan coba lagi.');
+                return;
+            }
+
             const formData = new FormData(this);
             
             // Convert checkboxes to 1 or 0
@@ -566,13 +594,15 @@
                 formData.set(day, formData.has(day) ? 1 : 0);
             });
 
-            // Add method spoofing for PUT
-            formData.append('_method', 'PUT');
+            // Method spoofing + CSRF token di body (kompatibel Laravel)
+            formData.set('_method', 'PUT');
+            formData.set('_token', csrfToken);
 
-            fetch(`/divisi/${selectedDivisiId}`, {
+            fetch(`/divisi/${encodeURIComponent(selectedDivisiId)}`, {
                     method: 'POST',
+                    credentials: 'same-origin',
                     headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'X-CSRF-TOKEN': csrfToken,
                         'Accept': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest'
                     },

@@ -10,21 +10,45 @@ class HrisApiService
     protected $token = null;
 
     protected array $leaveTypeMapping = [
-        'Cuti Tahunan' => 'C010',
-        'Cuti Umroh' => 'C013',      // Umroh → C013
-        'Umroh' => 'C013',
+        // I001 — Izin Resmi (polos spesifik dulu agar partial match benar)
+        'Cuti Khitanan/Pembaptisan anak karyawan' => 'I001',
+        'Khitanan' => 'I001',
+        'Pembaptisan anak karyawan' => 'I001',
+        'Cuti Istri Karyawan melahirkan / keguguran' => 'I001',
+        'Istri Karyawan melahirkan' => 'I001',
+        'keguguran' => 'I001',
+        'Cuti Kematian Orang tua / Mertua Karyawan' => 'I001',
+        'Kematian Orang tua' => 'I001',
+        'Mertua Karyawan' => 'I001',
+        'Cuti Kematian Istri/Suami/Anak Karyawan' => 'I001',
+        'Kematian Istri/Suami/Anak' => 'I001',
+        'Cuti Meninggal Anggota Keluarga Satu Rumah' => 'I001',
+        'Meninggal Anggota Keluarga' => 'I001',
+        'Cuti Haji' => 'I001',
+        'Haji' => 'I001',
+        'Cuti Umroh' => 'I001',
+        'Umroh' => 'I001',
+        'Cuti Perkawinan' => 'I001',
+        'Cuti Kematian' => 'I001',
+        'Izin Resmi' => 'I001',
+
+        // C012 — Cuti melahirkan karyawan / cuti bersama
         'Cuti Bersama' => 'C012',
         'Cuti Melahirkan' => 'C012',
-        'Cuti Perkawinan' => 'I001',  // Cuti Perkawinan karyawan → Izin Resmi
-        'Cuti Kematian' => 'I001',   // Cuti Kematian Orang tua/Mertua → Izin Resmi
+
+        // C010 — Cuti tahunan
+        'Cuti Tahunan' => 'C010',
+
+        // S010 — Sakit
         'Sakit' => 'S010',
         'Sick' => 'S010',
         'Sick Leave' => 'S010',
         'Surat Sakit' => 'S010',
         'Cuti Sakit' => 'S010',
         'Medical' => 'S010',
+
+        // I002 — Izin pribadi
         'Izin Pribadi' => 'I002',
-        'Izin Resmi' => 'I001',
     ];
 
     public function __construct()

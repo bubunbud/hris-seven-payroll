@@ -607,8 +607,13 @@ class ClosingController extends Controller
                     
                     // Hanya hitung jika jam sampai < jam pulang shift (valid untuk pulang cepat)
                     if ($tSampai->lessThan($tShiftPulang)) {
-                        // Hitung selisih dalam menit, lalu konversi ke jam
                         $menit = $tSampai->diffInMinutes($tShiftPulang, true);
+                        // Kurangi 1 jam jika rentang melewati jam istirahat 12:00-13:00
+                        $lunchStart = $tanggal->copy()->setTimeFromTimeString('12:00');
+                        $lunchEnd = $tanggal->copy()->setTimeFromTimeString('13:00');
+                        if ($tSampai->lt($lunchEnd) && $tShiftPulang->gt($lunchStart)) {
+                            $menit = max(0, $menit - 60);
+                        }
                         $totalJam += round($menit / 60, 2);
                     }
                 }

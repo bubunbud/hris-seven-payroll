@@ -28,6 +28,7 @@ class Divisi extends Model
         'vcKeterangan',
         'vcStaff',
         'vcKabag',
+        'vcManagerFinAcc',
         'vcKeuangan',
         'vPPIC',
         'vcPlantManager',

@@ -36,6 +36,10 @@ class UpdatePermissionsSeeder extends Seeder
             ['name' => 'View List Pengajuan Cuti API', 'slug' => 'view-list-pengajuan-cuti-api', 'module' => 'settings', 'description' => 'Melihat List Pengajuan Cuti dari API (feeder cuti)'],
             ['name' => 'View List Pengajuan Izin API', 'slug' => 'view-list-pengajuan-izin-api', 'module' => 'settings', 'description' => 'Melihat List Pengajuan Izin dari API (feeder izin tidak masuk)'],
             ['name' => 'View Tarik Data Absensi API', 'slug' => 'view-tarik-data-absensi-api', 'module' => 'settings', 'description' => 'Melihat Tarik Data Absensi dari API HRIS eksternal'],
+            ['name' => 'View Master Mesin Fingerprint', 'slug' => 'view-mesin-fingerprint', 'module' => 'settings', 'description' => 'Melihat dan mengelola master mesin fingerprint'],
+            ['name' => 'View Tarik Data Fingerprint', 'slug' => 'view-tarik-data-fingerprint', 'module' => 'settings', 'description' => 'Melihat dan menarik data absensi dari mesin fingerprint'],
+            ['name' => 'View Tarik Data Absensi Supabase', 'slug' => 'view-tarik-data-absensi-supabase', 'module' => 'settings', 'description' => 'Melihat dan menarik data absensi dari Supabase REST API'],
+            ['name' => 'View Tarik Data Izin/Sakit/Cuti Supabase', 'slug' => 'view-tarik-data-leave-supabase', 'module' => 'settings', 'description' => 'Melihat dan menarik data izin, sakit, cuti dari Supabase leave_requests'],
             // Settings - Login aktif & riwayat
             ['name' => 'View Login Activity', 'slug' => 'view-login-activity', 'module' => 'settings', 'description' => 'Melihat user yang sedang login dan riwayat login/logout'],
         ];
@@ -74,6 +78,14 @@ class UpdatePermissionsSeeder extends Seeder
         if ($adminRole && $absensiApiPerm) {
             $adminRole->permissions()->syncWithoutDetaching([$absensiApiPerm->id]);
             $this->command->info("Role Admin: permission view-tarik-data-absensi-api dilampirkan (jika belum).");
+        }
+
+        foreach (['view-mesin-fingerprint', 'view-tarik-data-fingerprint', 'view-tarik-data-absensi-supabase', 'view-tarik-data-leave-supabase'] as $slug) {
+            $perm = Permission::where('slug', $slug)->first();
+            if ($adminRole && $perm) {
+                $adminRole->permissions()->syncWithoutDetaching([$perm->id]);
+                $this->command->info("Role Admin: permission {$slug} dilampirkan (jika belum).");
+            }
         }
     }
 }

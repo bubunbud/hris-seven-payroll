@@ -145,9 +145,10 @@
 
     .signature-block {
         display: inline-block;
-        width: 18%;
+        width: 15%;
         vertical-align: top;
-        margin-right: 1%;
+        margin-right: 0.5%;
+        text-align: center;
     }
 
     .signature-block .signature-line {
@@ -335,7 +336,7 @@
                 <p>Bandung Barat, {{ \Carbon\Carbon::now()->format('d F Y') }}</p>
             </div>
 
-            <!-- Caption Row -->
+            <!-- Caption Row (di bawah tempat, tanggal) -->
             <div style="margin-top: 30px; display: flex; justify-content: space-around; align-items: center;">
                 <div class="signature-block">
                     <p style="margin: 0; text-align: center;"><strong>Dibuat Oleh,</strong></p>
@@ -352,24 +353,30 @@
                 <div class="signature-block">
                     <p style="margin: 0; text-align: center;"><strong>Mengetahui,</strong></p>
                 </div>
+                <div class="signature-block">
+                    <p style="margin: 0; text-align: center;"><strong>Mengetahui,</strong></p>
+                </div>
             </div>
 
-            <!-- Nama Penandatangan Row -->
+            <!-- Nama Penandatangan Row (di atas garis) -->
             <div style="margin-top: 70px; display: flex; justify-content: space-around; align-items: flex-end;">
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcStaff ? $divisiData->vcStaff : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vcStaff ? $divisiData->vcStaff : '' }}</p>
                 </div>
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcKeuangan ? $divisiData->vcKeuangan : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vcKeuangan ? $divisiData->vcKeuangan : '' }}</p>
                 </div>
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcKabag ? $divisiData->vcKabag : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vcKabag ? $divisiData->vcKabag : '' }}</p>
                 </div>
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vPPIC ? $divisiData->vPPIC : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vcManagerFinAcc ? $divisiData->vcManagerFinAcc : '' }}</p>
                 </div>
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcPlantManager ? $divisiData->vcPlantManager : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vPPIC ? $divisiData->vPPIC : '' }}</p>
+                </div>
+                <div class="signature-block">
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px;">{{ $divisiData && $divisiData->vcPlantManager ? $divisiData->vcPlantManager : '' }}</p>
                 </div>
             </div>
 
@@ -390,9 +397,12 @@
                 <div class="signature-block">
                     <div class="signature-line"></div>
                 </div>
+                <div class="signature-block">
+                    <div class="signature-line"></div>
+                </div>
             </div>
 
-            <!-- Jabatan Row -->
+            <!-- Jabatan Row (di bawah garis) -->
             <div style="margin-top: -45px; display: flex; justify-content: space-around; align-items: flex-start;">
                 <div class="signature-block">
                     <p style="margin: 0; text-align: center; padding-top: 0;">Staff Payroll</p>
@@ -402,6 +412,9 @@
                 </div>
                 <div class="signature-block">
                     <p style="margin: 0; text-align: center; padding-top: 0;">Manager / Ka. Dept</p>
+                </div>
+                <div class="signature-block">
+                    <p style="margin: 0; text-align: center; padding-top: 0;">Sr. Mgr. Fincount</p>
                 </div>
                 <div class="signature-block">
                     <p style="margin: 0; text-align: center; padding-top: 0;">Direktur / General Manager</p>

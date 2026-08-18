@@ -445,10 +445,10 @@
                     <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcKabag ? $divisiData->vcKabag : '' }}</p>
                 </div>
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vPPIC ? $divisiData->vPPIC : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcManagerFinAcc ? $divisiData->vcManagerFinAcc : '' }}</p>
                 </div>
                 <div class="signature-block">
-                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vcPlantManager ? $divisiData->vcPlantManager : '' }}</p>
+                    <p class="signature-name" style="margin: 0; min-height: 20px; padding-bottom: 2px; text-align: center;">{{ $divisiData && $divisiData->vPPIC ? $divisiData->vPPIC : '' }}</p>
                 </div>
             </div>
 
@@ -483,10 +483,10 @@
                     <p style="margin: 0; text-align: center; padding-top: 0;">Manager / Ka. Dept</p>
                 </div>
                 <div class="signature-block">
-                    <p style="margin: 0; text-align: center; padding-top: 0;">Direktur / General Manager</p>
+                    <p style="margin: 0; text-align: center; padding-top: 0;">Sr. Mgr. Fincount</p>
                 </div>
                 <div class="signature-block">
-                    <p style="margin: 0; text-align: center; padding-top: 0;">General Manager / Direktur</p>
+                    <p style="margin: 0; text-align: center; padding-top: 0;">Direktur / General Manager</p>
                 </div>
             </div>
         </div>
